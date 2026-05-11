@@ -1,0 +1,38 @@
+version: "3.9"
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: terminaloj
+      MYSQL_USER: toj
+      MYSQL_PASSWORD: toj_password
+    ports: ["3306:3306"]
+    volumes: ["toj-mysql:/var/lib/mysql"]
+    command: [
+      "--default-authentication-plugin=mysql_native_password",
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_unicode_ci"
+    ]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports: ["5672:5672", "15672:15672"]
+
+  judger:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.judger
+    ports: ["9090:9090"]
+
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    depends_on: [mysql, rabbitmq, judger]
+    ports: ["8080:8080"]
+    environment:
+      - TZ=Asia/Shanghai
+
+volumes:
+  toj-mysql: {}

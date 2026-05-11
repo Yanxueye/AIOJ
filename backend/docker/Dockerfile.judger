@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+# The judger runs the sandboxed evaluation. This base image intentionally
+# keeps gcc / python3 / openjdk so user submissions can be compiled /
+# executed inside the container. Real deployments should additionally
+# layer `isolate` or `nsjail` on top for kernel-level isolation.
+FROM golang:1.21-alpine AS builder
+WORKDIR /src
+COPY go.mod ./
+RUN go mod download || true
+COPY . .
+RUN go mod tidy && CGO_ENABLED=0 go build -o /out/toj-judger ./cmd/judger
+
+FROM alpine:3.20
+RUN apk add --no-cache g++ python3 openjdk17-jre-headless && adduser -D -u 10002 judger
+WORKDIR /app
+COPY --from=builder /out/toj-judger /app/toj-judger
+USER judger
+EXPOSE 9090
+ENTRYPOINT ["/app/toj-judger", "-addr", "0.0.0.0:9090"]

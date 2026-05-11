@@ -1,0 +1,42 @@
+// judger.proto — gRPC contract between the OJ backend and the sandboxed
+// judger container. The concrete transport uses google.golang.org/grpc with
+// a JSON codec (see internal/judger/codec.go) so no protoc plugin is
+// required to build the project. This file is the canonical source of
+// truth for the schema and can be fed to any other language binding via
+// `protoc --go_out=...`.
+
+syntax = "proto3";
+
+package judger;
+
+option go_package = "github.com/terminaloj/backend/internal/judger/judgerpb";
+
+service Judger {
+  // Judge compiles the submitted source against the stored test cases and
+  // returns a verdict. The call is synchronous from the judger's point of
+  // view; the OJ backend drives asynchrony via RabbitMQ.
+  rpc Judge(JudgeRequest) returns (JudgeResponse);
+}
+
+message JudgeRequest {
+  uint64 submission_id = 1;
+  uint64 problem_id    = 2;
+  string language      = 3;   // cpp | java | python | go
+  string code          = 4;
+  int32  time_limit_ms = 5;
+  int32  memory_limit_mb = 6;
+  repeated TestCase test_cases = 7;
+}
+
+message TestCase {
+  string input    = 1;
+  string expected = 2;
+}
+
+message JudgeResponse {
+  uint64 submission_id = 1;
+  string status        = 2;   // Accepted | Wrong Answer | ...
+  int32  runtime_ms    = 3;
+  string memory_mb     = 4;   // string to match frontend formatting "3.2"
+  string error_message = 5;
+}

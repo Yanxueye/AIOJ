@@ -1,0 +1,35 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"
+
+jwt:
+  secret: "terminaloj-secret-change-me-in-prod"
+  expire_hours: 72
+
+mysql:
+  dsn: "toj:toj_password@tcp(127.0.0.1:3306)/terminaloj?charset=utf8mb4&parseTime=True&loc=Local"
+  max_idle: 10
+  max_open: 100
+  auto_migrate: true
+  seed: true
+
+rabbitmq:
+  url: "amqp://guest:guest@127.0.0.1:5672/"
+  submit_queue: "toj.submit"
+  enabled: true
+
+judger:
+  grpc_addr: "127.0.0.1:9090"
+  timeout_seconds: 15
+
+ratelimit:
+  submit_per_minute: 12
+  submit_burst: 3
+
+ai:
+  enabled: false
+  endpoint: "http://127.0.0.1:18080"
+  api_key: ""
+  model: "gpt-4o-mini"
+  timeout_seconds: 20
