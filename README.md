@@ -1,5 +1,7 @@
 # AIOJ / TerminalOJ
 
+Powered by Xueye Yan
+
 AIOJ is an AI-assisted online judge system for programming practice. It provides problem browsing, code editing, submission judging, submission history, personal learning statistics, and AI-powered learning assistance.
 
 The project contains a Vue 3 frontend and a Go backend. The backend uses RabbitMQ and gRPC to model an asynchronous judging pipeline, closer to a real online judge architecture than a simple synchronous demo.
