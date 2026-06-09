@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-const USE_MOCK = true
+const USE_MOCK = false
 
 const http = axios.create({
   baseURL: '/api',

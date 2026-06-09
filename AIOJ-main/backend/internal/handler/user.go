@@ -86,6 +86,7 @@ func buildProfile(db *gorm.DB, u *models.User, extended bool) models.Profile {
 		ID:                u.ID,
 		Username:          u.Username,
 		Email:             u.Email,
+		Role:              u.Role,
 		Avatar:            u.Avatar,
 		Bio:               u.Bio,
 		Rating:            u.Rating,

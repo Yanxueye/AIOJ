@@ -29,7 +29,7 @@
   "data": {
     "token": "eyJhbGciOi...",
     "user": {
-      "id": 1, "username": "coder_test", "rating": 1520,
+      "id": 2, "username": "admin", "role": "admin", "rating": 1800,
       "solvedCount": 28, "totalSubmissions": 65, "acceptRate": "43.1",
       "rank": 42, "registeredAt": "2026-03-15"
     }
@@ -88,7 +88,7 @@
 1. 校验请求体 + 语言枚举 + 题目存在性
 2. 命中 **令牌桶限流**（默认 12 次 / 分钟，突发 3）
 3. 生成 `submissionId` 并 **发布** 到 RabbitMQ `toj.submit` 队列
-4. 立即返回 `Pending`，前端轮询 `/api/submissions/:id` 获取最终结果
+4. 立即返回 `Pending`，前端轮询 `/api/submissions/:id` 获取完整评测结果
 
 请求体：
 ```json
@@ -102,12 +102,19 @@
   "data": {
     "id": 100123,
     "problemId": 1001,
-    "status": "Pending",
-    "language": "cpp",
-    "runtime": 0, "memory": "0.0",
-    "codeLength": 512,
-    "createdAt": "2026-04-20T14:05:12.345Z"
-  }
+    "traceId": "judge-1001-100123",
+      "status": "Pending",
+      "language": "cpp",
+      "runtime": 0,
+      "runtimeMs": 0,
+      "memory": "0.0",
+      "memoryKb": 0,
+      "compileOutput": "",
+      "errorMessage": "",
+      "caseResults": [],
+      "codeLength": 512,
+      "createdAt": "2026-04-20T14:05:12.345Z"
+    }
 }
 ```
 
@@ -124,11 +131,11 @@
 | `status` | 按评测状态精确匹配 |
 | `sortBy` | `time`（默认，按 `id DESC`）或 `problemId` |
 
-响应：`{ list: [...], total: number }`，结构与前端 `SubmissionStatus.vue` 对齐。
+响应：`{ list: [...], total: number }`，列表项会返回 `runtimeMs`、`memoryKb`、`compileOutput`、`errorMessage` 等 richer 字段。
 
 ### `GET /api/submissions/:id` ✅
 
-返回单条提交；越权访问返回 404。
+返回单条提交详情；越权访问返回 404。详情中包含 `traceId`、`caseResults[]`、`compileOutput`、`queueStartedAt`、`judgeStartedAt`、`finishedAt`，以及 case 级别的 `stdoutBytes`、`stderrBytes`、`signal` 等字段。
 
 ---
 
@@ -330,6 +337,5 @@ resp, err := judger.NewClient("127.0.0.1:9090", 15).Judge(ctx, &JudgeRequest{...
 1. `docker compose -f backend/docker/docker-compose.yml up -d mysql rabbitmq`
 2. `cd backend && go mod tidy && go run ./cmd/judger` （另开一个终端）
 3. `go run ./cmd/server -config config.yaml`
-4. 默认账号：`coder_test` / `123456`；题库已自动 Seed 5 道题
+4. 默认账号：普通用户 `coder_test` / `123456`，管理员 `admin` / `123456`；题库已自动 Seed 5 道题
 5. 前端将 `src/api/index.js` 中的 `USE_MOCK` 设为 `false`，`baseURL` 指向 `http://localhost:8080`
-

@@ -11,7 +11,7 @@ The project contains a Vue 3 frontend and a Go backend. The backend uses RabbitM
 - User registration and login with JWT authentication
 - Problem list with pagination, keyword search, difficulty filtering, and tag filtering
 - Problem detail page with Markdown, LaTeX, and code highlighting support
-- Monaco Editor based code editor for C++, Java, Python3, and Go
+- Monaco Editor based code editor for C++, Python3, and Go
 - Local draft autosave by problem and programming language
 - Code submission and asynchronous judging status updates
 - Submission history with filtering and sorting

@@ -48,7 +48,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		utils.BadRequest(c, "用户名或密码错误")
 		return
 	}
-	token, err := h.JWT.Sign(user.ID, user.Username)
+	token, err := h.JWT.Sign(user.ID, user.Username, user.Role)
 	if err != nil {
 		utils.Server(c, err.Error())
 		return
@@ -90,7 +90,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		utils.Server(c, err.Error())
 		return
 	}
-	user := models.User{Username: req.Username, Email: req.Email, PasswordHash: hash, Rating: 1200}
+	user := models.User{Username: req.Username, Email: req.Email, PasswordHash: hash, Role: "user", Rating: 1200}
 	if err := h.DB.Create(&user).Error; err != nil {
 		utils.Server(c, err.Error())
 		return

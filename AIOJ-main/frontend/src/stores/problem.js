@@ -30,5 +30,16 @@ export const useProblemStore = defineStore('problem', () => {
     }
   }
 
-  return { problems, currentProblem, total, loading, fetchProblems, fetchProblem }
+  async function fetchAdminProblem(id) {
+    loading.value = true
+    try {
+      const res = await problemApi.getAdminDetail(id)
+      currentProblem.value = res.data
+      return res.data
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { problems, currentProblem, total, loading, fetchProblems, fetchProblem, fetchAdminProblem }
 })

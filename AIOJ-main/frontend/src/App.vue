@@ -8,12 +8,22 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import NavBar from '@/components/NavBar.vue'
 
 const route = useRoute()
+const userStore = useUserStore()
 const showNav = computed(() => !['login', 'register'].includes(route.name))
+
+onMounted(async () => {
+  if (userStore.isLoggedIn) {
+    try {
+      await userStore.fetchProfile()
+    } catch {}
+  }
+})
 </script>
 
 <style scoped>

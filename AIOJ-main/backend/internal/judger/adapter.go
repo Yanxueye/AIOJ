@@ -21,6 +21,7 @@ var languageMap = map[string]string{
 type rjJudgeRequest struct {
 	SubmissionID  int64        `json:"submission_id"`
 	ProblemID     int64        `json:"problem_id"`
+	TraceID       string       `json:"trace_id,omitempty"`
 	Language      string       `json:"language"`
 	Code          string       `json:"code"`
 	TimeLimitMs   int32        `json:"time_limit_ms"`
@@ -50,6 +51,9 @@ type rjCaseResult struct {
 	Status        string `json:"status"`
 	RuntimeMs     int32  `json:"runtime_ms"`
 	MemoryKB      int32  `json:"memory_kb"`
+	StdoutBytes   int32  `json:"stdout_bytes"`
+	StderrBytes   int32  `json:"stderr_bytes"`
+	Signal        string `json:"signal"`
 	StdoutPreview string `json:"stdout_preview"`
 	StderrPreview string `json:"stderr_preview"`
 }
@@ -119,16 +123,17 @@ func (r *RemoteJudger) Judge(ctx context.Context, req *JudgeRequest) (*JudgeResp
 	rjReq := &rjJudgeRequest{
 		SubmissionID:  int64(req.SubmissionID),
 		ProblemID:     int64(req.ProblemID),
+		TraceID:       req.TraceID,
 		Language:      rjLang,
 		Code:          req.Code,
 		TimeLimitMs:   req.TimeLimitMS,
 		MemoryLimitMB: req.MemoryLimitMB,
-		OutputLimitKB: 0,
+		OutputLimitKB: req.OutputLimitKB,
 		TestCases:     make([]rjTestCase, len(req.TestCases)),
 	}
 	for i, tc := range req.TestCases {
 		rjReq.TestCases[i] = rjTestCase{
-			CaseNo:   int32(i),
+			CaseNo:   int32(i + 1),
 			Input:    tc.Input,
 			Expected: tc.Expected,
 		}
@@ -145,12 +150,29 @@ func (r *RemoteJudger) Judge(ctx context.Context, req *JudgeRequest) (*JudgeResp
 
 	// Translate response back to AIOJ format (MemoryKB -> MemoryMB string).
 	memoryMB := fmt.Sprintf("%.1f", float64(rjResp.MemoryKB)/1024.0)
+	caseResults := make([]CaseResult, len(rjResp.CaseResults))
+	for i, item := range rjResp.CaseResults {
+		caseResults[i] = CaseResult{
+			CaseNo:        item.CaseNo,
+			Status:        item.Status,
+			RuntimeMS:     item.RuntimeMs,
+			MemoryKB:      item.MemoryKB,
+			StdoutBytes:   item.StdoutBytes,
+			StderrBytes:   item.StderrBytes,
+			Signal:        item.Signal,
+			StdoutPreview: item.StdoutPreview,
+			StderrPreview: item.StderrPreview,
+		}
+	}
 
 	return &JudgeResponse{
 		SubmissionID: uint64(rjResp.SubmissionID),
 		Status:       rjResp.Status,
 		RuntimeMS:    rjResp.RuntimeMs,
 		MemoryMB:     memoryMB,
+		MemoryKB:     rjResp.MemoryKB,
+		CompileOut:   rjResp.CompileOut,
 		ErrorMessage: rjResp.ErrorMessage,
+		CaseResults:  caseResults,
 	}, nil
 }

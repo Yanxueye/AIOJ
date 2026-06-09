@@ -18,11 +18,7 @@
             <el-icon><MagicStick /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-button
-          type="success"
-          :loading="submitting"
-          @click="handleSubmit"
-        >
+        <el-button type="success" :loading="submitting" @click="handleSubmit">
           <el-icon><Position /></el-icon>提交代码
         </el-button>
       </div>
@@ -35,6 +31,7 @@
           <div class="panel-meta" v-if="problem">
             <el-tag size="small" type="info">时间限制: {{ problem.timeLimit }}ms</el-tag>
             <el-tag size="small" type="info">内存限制: {{ problem.memoryLimit }}MB</el-tag>
+            <el-tag size="small" type="info">输出限制: {{ problem.outputLimitKb || 1024 }}KB</el-tag>
           </div>
         </div>
         <div class="panel-content">
@@ -62,9 +59,43 @@
                 <el-icon><Close /></el-icon>
               </el-button>
             </div>
-            <div class="result-details" v-if="submissionResult.status === 'Accepted'">
-              <span>运行时间: {{ submissionResult.runtime }}ms</span>
-              <span>内存: {{ submissionResult.memory }}MB</span>
+
+            <div class="result-details">
+              <span v-if="submissionResult.traceId">Trace: {{ submissionResult.traceId }}</span>
+              <span>运行时间: {{ displayRuntime(submissionResult) }}</span>
+              <span>内存: {{ displayMemory(submissionResult) }}</span>
+              <span v-if="submissionResult.finishedAt">完成时间: {{ formatTime(submissionResult.finishedAt) }}</span>
+            </div>
+
+            <div v-if="submissionResult.errorMessage" class="result-block">
+              <div class="result-block-title">错误信息</div>
+              <pre>{{ submissionResult.errorMessage }}</pre>
+            </div>
+
+            <div v-if="submissionResult.compileOutput" class="result-block">
+              <div class="result-block-title">编译输出</div>
+              <pre>{{ submissionResult.compileOutput }}</pre>
+            </div>
+
+            <div v-if="submissionResult.caseResults?.length" class="result-block">
+              <div class="result-block-title">测试点结果</div>
+              <div class="case-list">
+                <div v-for="item in submissionResult.caseResults" :key="item.caseNo" class="case-item">
+                  <div class="case-top">
+                    <span>Case {{ item.caseNo }}</span>
+                    <span :class="statusClass(item.status)">{{ item.status }}</span>
+                  </div>
+                  <div class="case-meta">
+                    <span>{{ item.runtimeMs ?? 0 }} ms</span>
+                    <span>{{ item.memoryKb ?? 0 }} KB</span>
+                    <span>{{ item.stdoutBytes ?? 0 }} stdoutB</span>
+                    <span>{{ item.stderrBytes ?? 0 }} stderrB</span>
+                    <span v-if="item.signal">signal: {{ item.signal }}</span>
+                  </div>
+                  <pre v-if="item.stdoutPreview" class="case-preview">{{ item.stdoutPreview }}</pre>
+                  <pre v-if="item.stderrPreview" class="case-preview case-error">{{ item.stderrPreview }}</pre>
+                </div>
+              </div>
             </div>
           </div>
         </transition>
@@ -159,7 +190,7 @@ async function handleSubmit() {
     })
     submissionResult.value = result
     if (result.status === 'Accepted') {
-      ElMessage.success('通过！恭喜 🎉')
+      ElMessage.success('通过')
     } else {
       ElMessage.warning(`评测结果: ${result.status}`)
     }
@@ -172,14 +203,44 @@ async function handleSubmit() {
 
 function statusClass(status) {
   const map = {
-    'Accepted': 'status-accepted',
+    Pending: 'status-pending',
+    Queueing: 'status-pending',
+    Compiling: 'status-running',
+    Running: 'status-running',
+    Accepted: 'status-accepted',
     'Wrong Answer': 'status-wrong',
-    'Time Limit Exceeded': 'status-tle',
+    'Compile Error': 'status-ce',
     'Runtime Error': 'status-wrong',
-    'Compilation Error': 'status-ce',
-    'Pending': 'status-pending'
+    'Time Limit Exceeded': 'status-tle',
+    'Memory Limit Exceeded': 'status-mle',
+    'Output Limit Exceeded': 'status-ole',
+    'System Error': 'status-system'
   }
   return map[status] || ''
+}
+
+function displayRuntime(result) {
+  const runtime = result?.runtimeMs ?? result?.runtime
+  return runtime != null ? `${runtime}ms` : '-'
+}
+
+function displayMemory(result) {
+  if (result?.memoryKb != null && result.memoryKb > 0) {
+    return `${result.memoryKb} KB`
+  }
+  if (result?.memory != null) {
+    return `${result.memory} MB`
+  }
+  return '-'
+}
+
+function formatTime(iso) {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  })
 }
 
 function diffTagType(d) {
@@ -260,6 +321,7 @@ onBeforeUnmount(() => {
 .panel-meta {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .panel-content {
   flex: 1;
@@ -289,6 +351,8 @@ onBeforeUnmount(() => {
   border-top: 2px solid var(--border-color);
   padding: 12px 16px;
   flex-shrink: 0;
+  max-height: 46vh;
+  overflow-y: auto;
 }
 .result-header {
   display: flex;
@@ -303,6 +367,59 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   font-size: 13px;
   color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+.result-block {
+  margin-top: 12px;
+}
+.result-block-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.result-block pre,
+.case-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f5f7fa;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.case-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.case-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fafbfc;
+}
+.case-top,
+.case-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.case-top {
+  font-weight: 600;
+}
+.case-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.case-preview {
+  margin-top: 8px;
+}
+.case-error {
+  background: #fff2f0;
 }
 
 .slide-up-enter-active, .slide-up-leave-active {

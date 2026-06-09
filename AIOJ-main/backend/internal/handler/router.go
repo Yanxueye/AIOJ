@@ -43,6 +43,10 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jwt *utils.JWTManager, cfg *con
 		authed.PUT("/user/profile", user.UpdateProfile)
 
 		authed.GET("/problems/:id", problem.Detail)
+		authed.POST("/problems", middleware.RequireAdmin(), problem.Create)
+		authed.GET("/admin/problems/:id", middleware.RequireAdmin(), problem.AdminDetail)
+		authed.PUT("/problems/:id", middleware.RequireAdmin(), problem.Update)
+		authed.DELETE("/problems/:id", middleware.RequireAdmin(), problem.Delete)
 
 		authed.POST("/submissions",
 			middleware.PerUserRateLimit(cfg.RateLimit.SubmitPerMinute, cfg.RateLimit.SubmitBurst),

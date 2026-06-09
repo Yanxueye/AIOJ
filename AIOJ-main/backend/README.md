@@ -18,7 +18,7 @@ go run ./cmd/judger
 go run ./cmd/server -config config.yaml
 ```
 
-默认账号：`coder_test` / `123456`。详见 [API.md](API.md) 与 [PROGRESS.md](PROGRESS.md)。
+默认账号：普通用户 `coder_test` / `123456`，管理员 `admin` / `123456`。详见 [API.md](API.md) 与 [PROGRESS.md](PROGRESS.md)。
 
 ## 目录速览
 

@@ -7,6 +7,7 @@ type User struct {
 	Username     string    `gorm:"type:varchar(32);uniqueIndex;not null" json:"username"`
 	Email        string    `gorm:"type:varchar(128);uniqueIndex;not null" json:"email"`
 	PasswordHash string    `gorm:"type:varchar(128);not null" json:"-"`
+	Role         string    `gorm:"type:varchar(16);default:'user';index" json:"role"`
 	Avatar       string    `gorm:"type:varchar(256)" json:"avatar"`
 	Bio          string    `gorm:"type:varchar(256)" json:"bio"`
 	Rating       int       `gorm:"default:1200" json:"rating"`
@@ -21,6 +22,7 @@ type Profile struct {
 	ID                 uint64         `json:"id"`
 	Username           string         `json:"username"`
 	Email              string         `json:"email"`
+	Role               string         `json:"role"`
 	Avatar             string         `json:"avatar"`
 	Bio                string         `json:"bio"`
 	Rating             int            `json:"rating"`

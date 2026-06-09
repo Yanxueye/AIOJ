@@ -10,6 +10,7 @@ import (
 const (
 	ctxUserID   = "x-user-id"
 	ctxUsername = "x-username"
+	ctxUserRole = "x-user-role"
 )
 
 // JWTAuth verifies the Authorization header and stashes the user in the gin
@@ -33,6 +34,7 @@ func JWTAuth(mgr *utils.JWTManager) gin.HandlerFunc {
 		}
 		c.Set(ctxUserID, claims.UserID)
 		c.Set(ctxUsername, claims.Username)
+		c.Set(ctxUserRole, claims.Role)
 		c.Next()
 	}
 }
@@ -58,4 +60,27 @@ func CurrentUsername(c *gin.Context) string {
 		return s
 	}
 	return ""
+}
+
+// CurrentUserRole extracts the authenticated user role from the context.
+func CurrentUserRole(c *gin.Context) string {
+	v, ok := c.Get(ctxUserRole)
+	if !ok {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// RequireAdmin only allows admin users through.
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if CurrentUserRole(c) != "admin" {
+			utils.Forbidden(c, "admin role required")
+			return
+		}
+		c.Next()
+	}
 }

@@ -27,13 +27,14 @@
     "data": {
       "token": "jwt_token_string",
       "user": {
-        "id": 1,
-        "username": "coder_test",
-        "email": "test@terminaloj.com",
+        "id": 2,
+        "username": "admin",
+        "role": "admin",
+        "email": "admin@terminaloj.com",
         "avatar": "",
-        "bio": "热爱算法的开发者",
-        "rating": 1520,
-        "rank": 42,
+        "bio": "题库与系统管理员",
+        "rating": 1800,
+        "rank": 1,
         "solvedCount": 28,
         "totalSubmissions": 65,
         "acceptRate": "43.1",
@@ -80,13 +81,14 @@
     "code": 0,
     "message": "ok",
     "data": {
-      "id": 1,
-      "username": "coder_test",
-      "email": "test@terminaloj.com",
+      "id": 2,
+      "username": "admin",
+      "role": "admin",
+      "email": "admin@terminaloj.com",
       "avatar": "",
-      "bio": "热爱算法的开发者",
-      "rating": 1520,
-      "rank": 42,
+      "bio": "题库与系统管理员",
+      "rating": 1800,
+      "rank": 1,
       "solvedCount": 28,
       "totalSubmissions": 65,
       "acceptRate": "43.1",
@@ -224,7 +226,7 @@
   ```json
   {
     "problemId": 1001,
-    "language": "cpp | java | python | go",
+    "language": "cpp | python | go",
     "code": "string (源代码)"
   }
   ```
@@ -236,10 +238,16 @@
     "data": {
       "id": 100001,
       "problemId": 1001,
-      "status": "Accepted | Wrong Answer | Time Limit Exceeded | Runtime Error | Compilation Error | Pending",
+      "traceId": "judge-1001-100001",
+      "status": "Pending | Queueing | Compiling | Running | Accepted | Wrong Answer | Compile Error | Runtime Error | Time Limit Exceeded | Memory Limit Exceeded | Output Limit Exceeded | System Error",
       "language": "cpp",
       "runtime": 42,
+      "runtimeMs": 42,
       "memory": "3.2",
+      "memoryKb": 3277,
+      "compileOutput": "",
+      "errorMessage": "",
+      "caseResults": [],
       "createdAt": "2026-04-06T10:30:00.000Z"
     }
   }
@@ -271,7 +279,11 @@
           "status": "Accepted",
           "language": "cpp",
           "runtime": 42,
+          "runtimeMs": 42,
           "memory": "3.2",
+          "memoryKb": 3277,
+          "compileOutput": "",
+          "errorMessage": "",
           "createdAt": "2026-04-06T10:30:00.000Z",
           "codeLength": 512
         }
@@ -286,7 +298,29 @@
 - **GET** `/api/submissions/:id`
 - **认证**：需要
 - **路径参数**：`id` - 提交ID
-- **响应**：返回单个提交对象（同列表中的单项）
+- **响应**：返回单个提交对象，并额外包含：
+  ```json
+  {
+    "traceId": "judge-1001-100001",
+    "queueStartedAt": "2026-04-06T10:30:00.100Z",
+    "judgeStartedAt": "2026-04-06T10:30:00.200Z",
+    "finishedAt": "2026-04-06T10:30:00.800Z",
+    "caseResults": [
+      {
+        "submissionId": 100001,
+        "caseNo": 1,
+        "status": "Accepted",
+        "runtimeMs": 42,
+        "memoryKb": 3277,
+        "stdoutBytes": 12,
+        "stderrBytes": 0,
+        "signal": "",
+        "stdoutPreview": "",
+        "stderrPreview": ""
+      }
+    ]
+  }
+  ```
 
 ---
 
@@ -374,7 +408,7 @@
   {
     "problemId": 1001,
     "submissionId": 100123,
-    "language": "cpp | java | python | go",
+    "language": "cpp | python | go",
     "code": "string",
     "judgeStatus": "Wrong Answer",
     "errorMessage": "case 3 failed"
@@ -473,4 +507,3 @@
 前端内置了完整的 Mock 数据层，在 `src/api/index.js` 中设置 `USE_MOCK = true` 即可启用。Mock 模式下所有 API 请求由前端本地拦截处理，无需启动后端服务。
 
 切换到真实后端时，将 `USE_MOCK` 设为 `false`，确保后端服务运行在 `http://localhost:8080` 即可。
-

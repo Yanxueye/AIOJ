@@ -12,7 +12,7 @@
         style="width: 120px"
         @input="debouncedLoad"
       />
-      <el-select v-model="filters.status" placeholder="评测状态" clearable style="width: 180px" @change="loadSubmissions">
+      <el-select v-model="filters.status" placeholder="评测状态" clearable style="width: 220px" @change="loadSubmissions">
         <el-option v-for="s in statusOptions" :key="s" :label="s" :value="s" />
       </el-select>
       <el-select v-model="filters.sortBy" style="width: 140px" @change="loadSubmissions">
@@ -47,7 +47,7 @@
             </router-link>
           </template>
         </el-table-column>
-        <el-table-column label="评测结果" width="180">
+        <el-table-column label="评测结果" width="200">
           <template #default="{ row }">
             <span :class="statusClass(row.status)">{{ row.status }}</span>
           </template>
@@ -55,12 +55,14 @@
         <el-table-column prop="language" label="语言" width="100" />
         <el-table-column label="运行时间" width="110">
           <template #default="{ row }">
-            {{ row.runtime != null ? row.runtime + 'ms' : '-' }}
+            {{ row.runtimeMs != null ? row.runtimeMs + 'ms' : (row.runtime != null ? row.runtime + 'ms' : '-') }}
           </template>
         </el-table-column>
-        <el-table-column label="内存" width="100">
+        <el-table-column label="内存" width="150">
           <template #default="{ row }">
-            {{ row.memory != null ? row.memory + 'MB' : '-' }}
+            <span v-if="row.memoryKb != null && row.memoryKb > 0">{{ row.memoryKb }} KB</span>
+            <span v-else-if="row.memory != null">{{ row.memory }} MB</span>
+            <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column label="提交时间" width="180">
@@ -92,7 +94,20 @@ import { useSubmissionStore } from '@/stores/submission'
 
 const submissionStore = useSubmissionStore()
 
-const statusOptions = ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Runtime Error', 'Compilation Error', 'Pending']
+const statusOptions = [
+  'Pending',
+  'Queueing',
+  'Compiling',
+  'Running',
+  'Accepted',
+  'Wrong Answer',
+  'Compile Error',
+  'Runtime Error',
+  'Time Limit Exceeded',
+  'Memory Limit Exceeded',
+  'Output Limit Exceeded',
+  'System Error'
+]
 
 const filters = reactive({ problemId: '', status: '', sortBy: 'time' })
 const pagination = reactive({ page: 1, pageSize: 20 })
@@ -115,12 +130,18 @@ function loadSubmissions() {
 
 function statusClass(status) {
   const map = {
+    'Pending': 'status-pending',
+    'Queueing': 'status-pending',
+    'Compiling': 'status-running',
+    'Running': 'status-running',
     'Accepted': 'status-accepted',
     'Wrong Answer': 'status-wrong',
-    'Time Limit Exceeded': 'status-tle',
+    'Compile Error': 'status-ce',
     'Runtime Error': 'status-wrong',
-    'Compilation Error': 'status-ce',
-    'Pending': 'status-pending'
+    'Time Limit Exceeded': 'status-tle',
+    'Memory Limit Exceeded': 'status-mle',
+    'Output Limit Exceeded': 'status-ole',
+    'System Error': 'status-system'
   }
   return map[status] || ''
 }

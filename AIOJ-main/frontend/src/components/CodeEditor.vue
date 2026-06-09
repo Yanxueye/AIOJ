@@ -37,14 +37,12 @@ const emit = defineEmits(['update:modelValue', 'change-language'])
 
 const languages = [
   { label: 'C++', value: 'cpp' },
-  { label: 'Java', value: 'java' },
   { label: 'Python3', value: 'python' },
   { label: 'Go', value: 'go' }
 ]
 
 const TEMPLATES = {
   cpp: '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    \n    return 0;\n}\n',
-  java: 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        \n    }\n}\n',
   python: 'import sys\ninput = sys.stdin.readline\n\ndef solve():\n    pass\n\nsolve()\n',
   go: 'package main\n\nimport (\n    "fmt"\n)\n\nfunc main() {\n    fmt.Println()\n}\n'
 }

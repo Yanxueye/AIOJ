@@ -61,6 +61,7 @@ func (s *Server) Judge(ctx context.Context, req *pb.JudgeRequest) (*pb.JudgeResp
 	result, err := s.judgeSvc.Judge(ctx, domain.JudgeRequest{
 		SubmissionID:  req.SubmissionID,
 		ProblemID:     req.ProblemID,
+		TraceID:       req.TraceID,
 		Language:      req.Language,
 		Code:          req.Code,
 		TimeLimitMs:   int(req.TimeLimitMs),
@@ -85,6 +86,9 @@ func (s *Server) Judge(ctx context.Context, req *pb.JudgeRequest) (*pb.JudgeResp
 			Status:        string(item.Status),
 			RuntimeMs:     int32(item.RuntimeMs),
 			MemoryKB:      int32(item.MemoryKB),
+			StdoutBytes:   int32(item.StdoutBytes),
+			StderrBytes:   int32(item.StderrBytes),
+			Signal:        item.Signal,
 			StdoutPreview: item.StdoutPreview,
 			StderrPreview: item.StderrPreview,
 		})

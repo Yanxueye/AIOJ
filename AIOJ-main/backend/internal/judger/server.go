@@ -58,10 +58,25 @@ type MockSandbox struct{}
 
 func (MockSandbox) Judge(_ context.Context, req *JudgeRequest) (*JudgeResponse, error) {
 	if strings.TrimSpace(req.Code) == "" {
-		return &JudgeResponse{SubmissionID: req.SubmissionID, Status: "Compilation Error", RuntimeMS: 0, MemoryMB: "0.0", ErrorMessage: "empty source"}, nil
+		return &JudgeResponse{
+			SubmissionID: req.SubmissionID,
+			Status:       "Compile Error",
+			RuntimeMS:    0,
+			MemoryMB:     "0.0",
+			MemoryKB:     0,
+			CompileOut:   "empty source",
+			ErrorMessage: "empty source",
+		}, nil
 	}
 	if strings.Contains(req.Code, "segfault") {
-		return &JudgeResponse{SubmissionID: req.SubmissionID, Status: "Runtime Error", RuntimeMS: 42, MemoryMB: "1.5", ErrorMessage: "SIGSEGV"}, nil
+		return &JudgeResponse{
+			SubmissionID: req.SubmissionID,
+			Status:       "Runtime Error",
+			RuntimeMS:    42,
+			MemoryMB:     "1.5",
+			MemoryKB:     1536,
+			ErrorMessage: "SIGSEGV",
+		}, nil
 	}
 
 	h := sha1.Sum([]byte(fmt.Sprintf("%d|%d|%s", req.ProblemID, req.SubmissionID, req.Code)))
@@ -78,10 +93,20 @@ func (MockSandbox) Judge(_ context.Context, req *JudgeRequest) (*JudgeResponse, 
 	}
 	runtime := int32(10 + int(seed%300))
 	memory := fmt.Sprintf("%.1f", 1.5+float64(seed%40)/10.0)
+	memoryKB := int32((1500 + int(seed%40)*100))
 	return &JudgeResponse{
 		SubmissionID: req.SubmissionID,
 		Status:       status,
 		RuntimeMS:    runtime,
 		MemoryMB:     memory,
+		MemoryKB:     memoryKB,
+		CaseResults: []CaseResult{
+			{
+				CaseNo:    1,
+				Status:    status,
+				RuntimeMS: runtime,
+				MemoryKB:  memoryKB,
+			},
+		},
 	}, nil
 }

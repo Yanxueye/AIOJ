@@ -5,22 +5,27 @@
     </div>
 
     <div class="filter-bar card">
-      <el-input
-        v-model="filters.keyword"
-        placeholder="搜索题号或题目名称..."
-        prefix-icon="Search"
-        clearable
-        style="width: 280px"
-        @input="debouncedSearch"
-      />
-      <el-select v-model="filters.difficulty" placeholder="难度" clearable style="width: 120px" @change="loadProblems">
-        <el-option label="简单" value="简单" />
-        <el-option label="中等" value="中等" />
-        <el-option label="困难" value="困难" />
-      </el-select>
-      <el-select v-model="filters.tag" placeholder="算法标签" clearable style="width: 140px" @change="loadProblems">
-        <el-option v-for="t in tags" :key="t" :label="t" :value="t" />
-      </el-select>
+      <div class="filter-controls">
+        <el-input
+          v-model="filters.keyword"
+          placeholder="搜索题号或题目名称..."
+          prefix-icon="Search"
+          clearable
+          style="width: 280px"
+          @input="debouncedSearch"
+        />
+        <el-select v-model="filters.difficulty" placeholder="难度" clearable style="width: 120px" @change="loadProblems">
+          <el-option label="简单" value="简单" />
+          <el-option label="中等" value="中等" />
+          <el-option label="困难" value="困难" />
+        </el-select>
+        <el-select v-model="filters.tag" placeholder="算法标签" clearable style="width: 140px" @change="loadProblems">
+          <el-option v-for="t in tags" :key="t" :label="t" :value="t" />
+        </el-select>
+      </div>
+      <el-button v-if="userStore.isAdmin" type="primary" @click="router.push('/admin/problems/new')">
+        添加题目
+      </el-button>
     </div>
 
     <div class="card">
@@ -64,6 +69,11 @@
             {{ row.acceptRate }}%
           </template>
         </el-table-column>
+        <el-table-column v-if="userStore.isAdmin" label="操作" width="110" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" @click.stop="goToEdit(row.id)">修改</el-button>
+          </template>
+        </el-table-column>
       </el-table>
 
       <div class="pagination-wrap">
@@ -83,12 +93,14 @@
 </template>
 
 <script setup>
-import { reactive, onMounted } from 'vue'
+import { onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProblemStore } from '@/stores/problem'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const problemStore = useProblemStore()
+const userStore = useUserStore()
 
 const tags = ['动态规划', '贪心', '搜索', '图论', '数学', '字符串', '数据结构', '模拟', '排序', '二分']
 
@@ -115,6 +127,10 @@ function goToDetail(row) {
   router.push(`/problem/${row.id}`)
 }
 
+function goToEdit(id) {
+  router.push(`/admin/problems/${id}/edit`)
+}
+
 function diffTagType(d) {
   return d === '简单' ? 'success' : d === '中等' ? 'warning' : 'danger'
 }
@@ -124,7 +140,14 @@ function sortByDifficulty(a, b) {
   return (order[a.difficulty] || 0) - (order[b.difficulty] || 0)
 }
 
-onMounted(loadProblems)
+onMounted(async () => {
+  if (userStore.isLoggedIn) {
+    try {
+      await userStore.fetchProfile()
+    } catch {}
+  }
+  loadProblems()
+})
 </script>
 
 <style scoped>
@@ -138,8 +161,15 @@ onMounted(loadProblems)
 .filter-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex-wrap: wrap;
 }
 .problem-title-cell {

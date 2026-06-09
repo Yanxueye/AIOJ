@@ -37,6 +37,7 @@ func Init(cfg config.MySQLConfig) (*gorm.DB, error) {
 			&models.User{},
 			&models.Problem{},
 			&models.Submission{},
+			&models.SubmissionCaseResult{},
 			&models.Announcement{},
 			&models.Conversation{},
 			&models.Message{},

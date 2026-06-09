@@ -3,7 +3,7 @@
     <div class="navbar-inner">
       <div class="navbar-left">
         <router-link to="/" class="logo">
-          <span class="logo-icon">⚡</span>
+          <span class="logo-icon">OJ</span>
           <span class="logo-text">TerminalOJ</span>
         </router-link>
         <nav class="nav-links">
@@ -36,6 +36,9 @@
                 <el-dropdown-item command="profile">
                   <el-icon><User /></el-icon>个人中心
                 </el-dropdown-item>
+                <el-dropdown-item v-if="userStore.isAdmin" command="admin-problem">
+                  <el-icon><EditPen /></el-icon>题目管理
+                </el-dropdown-item>
                 <el-dropdown-item command="logout" divided>
                   <el-icon><SwitchButton /></el-icon>退出登录
                 </el-dropdown-item>
@@ -67,6 +70,8 @@ const userStore = useUserStore()
 function handleCommand(cmd) {
   if (cmd === 'profile') {
     router.push('/profile')
+  } else if (cmd === 'admin-problem') {
+    router.push('/admin/problems/new')
   } else if (cmd === 'logout') {
     userStore.logout()
     router.push('/login')
@@ -109,7 +114,8 @@ function handleCommand(cmd) {
   color: var(--accent-blue);
 }
 .logo-icon {
-  font-size: 24px;
+  font-size: 18px;
+  font-weight: 800;
 }
 .nav-links {
   display: flex;

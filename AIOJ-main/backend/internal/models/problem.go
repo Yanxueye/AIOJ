@@ -76,6 +76,7 @@ type Problem struct {
 	Content         string      `gorm:"type:longtext" json:"content,omitempty"`
 	TimeLimit       int         `gorm:"default:1000" json:"timeLimit"`
 	MemoryLimit     int         `gorm:"default:256" json:"memoryLimit"`
+	OutputLimitKB   int32       `gorm:"default:1024" json:"outputLimitKb"`
 	Source          string      `gorm:"type:varchar(64)" json:"source"`
 	TestCases       TestCases   `gorm:"type:json" json:"-"`
 	SubmitCount     int         `gorm:"default:0" json:"submitCount"`
@@ -85,6 +86,13 @@ type Problem struct {
 }
 
 func (Problem) TableName() string { return "problems" }
+
+func (p Problem) OutputLimitKBOrDefault() int32 {
+	if p.OutputLimitKB > 0 {
+		return p.OutputLimitKB
+	}
+	return 1024
+}
 
 // AcceptRate renders the percentage string expected by the frontend.
 func (p Problem) AcceptRate() string {

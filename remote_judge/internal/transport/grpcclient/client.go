@@ -57,6 +57,7 @@ func (c *Client) Judge(ctx context.Context, req domain.JudgeRequest) (domain.Jud
 	err := c.conn.Invoke(ctx, "/judger.Judger/Judge", &pb.JudgeRequest{
 		SubmissionID:  req.SubmissionID,
 		ProblemID:     req.ProblemID,
+		TraceID:       req.TraceID,
 		Language:      req.Language,
 		Code:          req.Code,
 		TimeLimitMs:   int32(req.TimeLimitMs),
@@ -82,6 +83,9 @@ func (c *Client) Judge(ctx context.Context, req domain.JudgeRequest) (domain.Jud
 			Status:        domain.SubmissionStatus(item.Status),
 			RuntimeMs:     int(item.RuntimeMs),
 			MemoryKB:      int(item.MemoryKB),
+			StdoutBytes:   int(item.StdoutBytes),
+			StderrBytes:   int(item.StderrBytes),
+			Signal:        item.Signal,
 			StdoutPreview: item.StdoutPreview,
 			StderrPreview: item.StderrPreview,
 		})

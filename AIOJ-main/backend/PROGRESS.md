@@ -276,7 +276,7 @@ backend/
 | `announcements` | 简单表，前端首页公告栏读取 |
 | `conversations` / `messages` | `conversation_id` 索引；消息表 append-only |
 
-AutoMigrate 在 `config.mysql.auto_migrate = true` 时启用。首次启动 Seed 注入默认账号 `coder_test / 123456` 和 5 道示例题。
+AutoMigrate 在 `config.mysql.auto_migrate = true` 时启用。首次启动 Seed 注入默认账号 `coder_test / 123456`、管理员 `admin / 123456` 和 5 道示例题。
 
 ---
 
@@ -297,7 +297,7 @@ go run ./cmd/judger
 go run ./cmd/server -config config.yaml
 
 # 5. 联调（Windows PowerShell 示例）
-Invoke-RestMethod -Uri http://localhost:8080/api/auth/login -Method POST -Body '{"username":"coder_test","password":"123456"}' -ContentType 'application/json'
+Invoke-RestMethod -Uri http://localhost:8080/api/auth/login -Method POST -Body '{"username":"admin","password":"123456"}' -ContentType 'application/json'
 ```
 
 配置项 `config.yaml` 关键开关：

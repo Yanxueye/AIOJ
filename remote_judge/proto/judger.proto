@@ -12,12 +12,13 @@ service Judger {
 message JudgeRequest {
   int64 submission_id = 1;
   int64 problem_id = 2;
-  string language = 3;
-  string code = 4;
-  int32 time_limit_ms = 5;
-  int32 memory_limit_mb = 6;
-  int32 output_limit_kb = 7;
-  repeated TestCase test_cases = 8;
+  string trace_id = 3;
+  string language = 4;
+  string code = 5;
+  int32 time_limit_ms = 6;
+  int32 memory_limit_mb = 7;
+  int32 output_limit_kb = 8;
+  repeated TestCase test_cases = 9;
 }
 
 message TestCase {
@@ -41,8 +42,11 @@ message CaseResult {
   string status = 2;
   int32 runtime_ms = 3;
   int32 memory_kb = 4;
-  string stdout_preview = 5;
-  string stderr_preview = 6;
+  int32 stdout_bytes = 5;
+  int32 stderr_bytes = 6;
+  string signal = 7;
+  string stdout_preview = 8;
+  string stderr_preview = 9;
 }
 
 message HealthRequest {}

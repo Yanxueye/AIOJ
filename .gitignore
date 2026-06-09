@@ -6,10 +6,12 @@ Thumbs.db
 
 # Root metadata backups
 .repo_meta/
+判题服务集成方案.md
 
 # Frontend dependencies/build outputs
 AIOJ-main/frontend/node_modules/
 AIOJ-main/frontend/dist/
+AIOJ-main/frontend/.npm-cache/
 
 # General JS build artifacts
 node_modules/

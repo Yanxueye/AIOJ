@@ -4,6 +4,7 @@ package pb
 type JudgeRequest struct {
 	SubmissionID  int64      `json:"submission_id"`
 	ProblemID     int64      `json:"problem_id"`
+	TraceID       string     `json:"trace_id,omitempty"`
 	Language      string     `json:"language"`
 	Code          string     `json:"code"`
 	TimeLimitMs   int32      `json:"time_limit_ms"`
@@ -36,6 +37,9 @@ type CaseResult struct {
 	Status        string `json:"status"`
 	RuntimeMs     int32  `json:"runtime_ms"`
 	MemoryKB      int32  `json:"memory_kb"`
+	StdoutBytes   int32  `json:"stdout_bytes"`
+	StderrBytes   int32  `json:"stderr_bytes"`
+	Signal        string `json:"signal,omitempty"`
 	StdoutPreview string `json:"stdout_preview"`
 	StderrPreview string `json:"stderr_preview"`
 }

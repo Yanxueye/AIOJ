@@ -62,6 +62,10 @@ a {
 .status-tle { color: var(--accent-orange); font-weight: 600; }
 .status-pending { color: var(--text-muted); font-weight: 600; }
 .status-ce { color: var(--accent-purple); font-weight: 600; }
+.status-mle { color: #c2410c; font-weight: 600; }
+.status-ole { color: #b45309; font-weight: 600; }
+.status-system { color: #7c3aed; font-weight: 600; }
+.status-running { color: var(--accent-blue); font-weight: 600; }
 
 .difficulty-easy { color: var(--accent-green); }
 .difficulty-medium { color: var(--accent-orange); }

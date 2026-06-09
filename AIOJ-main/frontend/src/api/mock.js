@@ -66,25 +66,32 @@ const PROBLEM_DETAIL_TEMPLATE = {
   source: 'TerminalOJ 原创题目'
 }
 
-const STATUSES = ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Runtime Error', 'Compilation Error', 'Pending']
-const LANGUAGES = ['C++', 'Java', 'Python3', 'Go']
+const STATUSES = ['Pending', 'Queueing', 'Compiling', 'Running', 'Accepted', 'Wrong Answer', 'Compile Error', 'Runtime Error', 'Time Limit Exceeded', 'Memory Limit Exceeded', 'Output Limit Exceeded', 'System Error']
+const LANGUAGES = ['cpp', 'python', 'go']
 
 function generateSubmissions(count = 80) {
   const list = []
   const now = Date.now()
   for (let i = 0; i < count; i++) {
     const status = STATUSES[Math.floor(Math.random() * STATUSES.length)]
-    list.push({
-      id: 100000 + i,
-      problemId: 1000 + Math.floor(Math.random() * 50) + 1,
-      problemTitle: PROBLEMS[Math.floor(Math.random() * 50)].title,
-      status,
-      language: LANGUAGES[Math.floor(Math.random() * LANGUAGES.length)],
-      runtime: status === 'Accepted' ? Math.floor(Math.random() * 500) + 10 : null,
-      memory: status === 'Accepted' ? (Math.random() * 64 + 1).toFixed(1) : null,
-      createdAt: new Date(now - i * 3600000 * Math.random() * 48).toISOString(),
-      codeLength: Math.floor(Math.random() * 2000) + 200
-    })
+      list.push({
+        id: 100000 + i,
+        problemId: 1000 + Math.floor(Math.random() * 50) + 1,
+        problemTitle: PROBLEMS[Math.floor(Math.random() * 50)].title,
+        traceId: `mock-trace-${100000 + i}`,
+        status,
+        language: LANGUAGES[Math.floor(Math.random() * LANGUAGES.length)],
+        runtime: status === 'Accepted' ? Math.floor(Math.random() * 500) + 10 : 0,
+        runtimeMs: status === 'Accepted' ? Math.floor(Math.random() * 500) + 10 : 0,
+        memory: status === 'Accepted' ? (Math.random() * 64 + 1).toFixed(1) : '0.0',
+        memoryKb: status === 'Accepted' ? Math.floor(Math.random() * 65536) + 1024 : 0,
+        compileOutput: status === 'Compile Error' ? 'mock compile output' : '',
+        errorMessage: status === 'System Error' ? 'mock system error' : '',
+        createdAt: new Date(now - i * 3600000 * Math.random() * 48).toISOString(),
+        updatedAt: new Date(now - i * 3600000 * Math.random() * 24).toISOString(),
+        caseResults: [],
+        codeLength: Math.floor(Math.random() * 2000) + 200
+      })
   }
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 }
@@ -99,13 +106,14 @@ const ANNOUNCEMENTS = [
 ]
 
 const USER_PROFILE = {
-  id: 1,
-  username: 'coder_test',
-  email: 'test@terminaloj.com',
+  id: 2,
+  username: 'admin',
+  role: 'admin',
+  email: 'admin@terminaloj.com',
   avatar: '',
-  bio: '热爱算法的开发者',
-  rating: 1520,
-  rank: 42,
+  bio: '题库与系统管理员',
+  rating: 1800,
+  rank: 1,
   solvedCount: 28,
   totalSubmissions: 65,
   acceptRate: '43.1',
@@ -165,18 +173,79 @@ export const mockApi = {
     return wrap({ ...base, ...PROBLEM_DETAIL_TEMPLATE })
   },
 
+  async createProblem(data) {
+    await delay(300)
+    const problem = {
+      id: Number(data.id),
+      title: data.title,
+      difficulty: data.difficulty,
+      difficultyScore: data.difficultyScore,
+      tags: data.tags || [],
+      acceptRate: '0.0',
+      submitCount: 0,
+      accepted: false,
+      content: data.content,
+      timeLimit: data.timeLimit,
+      memoryLimit: data.memoryLimit,
+      outputLimitKb: data.outputLimitKb,
+      source: data.source,
+      testCases: data.testCases || []
+    }
+    PROBLEMS.unshift(problem)
+    return wrap(problem)
+  },
+
+  async updateProblem(id, data) {
+    await delay(300)
+    const index = PROBLEMS.findIndex(p => p.id === Number(id))
+    if (index < 0) throw new Error('题目不存在')
+    PROBLEMS[index] = { ...PROBLEMS[index], ...data }
+    return wrap(PROBLEMS[index])
+  },
+
+  async deleteProblem(id) {
+    await delay(300)
+    const index = PROBLEMS.findIndex(p => p.id === Number(id))
+    if (index < 0) throw new Error('题目不存在')
+    PROBLEMS.splice(index, 1)
+    return wrap({ deleted: true, id: Number(id) })
+  },
+
   async submitCode({ problemId, language, code }) {
     await delay(1500)
-    const statuses = ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Accepted', 'Accepted']
+    const statuses = ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Compile Error', 'Memory Limit Exceeded', 'Output Limit Exceeded']
     const status = statuses[Math.floor(Math.random() * statuses.length)]
+    const runtimeMs = status === 'Accepted' ? Math.floor(Math.random() * 200) + 20 : 0
+    const memoryKb = status === 'Accepted' ? Math.floor(Math.random() * 16384) + 1024 : 0
+    const id = Date.now()
     return wrap({
-      id: Date.now(),
+      id,
       problemId,
+      traceId: `mock-trace-${id}`,
       status,
       language,
-      runtime: status === 'Accepted' ? Math.floor(Math.random() * 200) + 20 : null,
-      memory: status === 'Accepted' ? (Math.random() * 32 + 2).toFixed(1) : null,
-      createdAt: new Date().toISOString()
+      runtime: runtimeMs,
+      runtimeMs,
+      memory: (memoryKb / 1024).toFixed(1),
+      memoryKb,
+      compileOutput: status === 'Compile Error' ? 'mock compile output' : '',
+      errorMessage: '',
+      caseResults: [
+        {
+          submissionId: id,
+          caseNo: 1,
+          status,
+          runtimeMs,
+          memoryKb,
+          stdoutBytes: status === 'Output Limit Exceeded' ? 4096 : 0,
+          stderrBytes: 0,
+          signal: '',
+          stdoutPreview: '',
+          stderrPreview: ''
+        }
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     })
   },
 

@@ -11,6 +11,7 @@ import (
 type Claims struct {
 	UserID   uint64 `json:"uid"`
 	Username string `json:"uname"`
+	Role     string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -29,11 +30,12 @@ func NewJWTManager(secret string, expireHours int) *JWTManager {
 }
 
 // Sign returns a signed JWT for the given user.
-func (m *JWTManager) Sign(userID uint64, username string) (string, error) {
+func (m *JWTManager) Sign(userID uint64, username, role string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:   userID,
 		Username: username,
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(m.expireHours) * time.Hour)),
