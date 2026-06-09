@@ -1,0 +1,31 @@
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Root metadata backups
+.repo_meta/
+
+# Frontend dependencies/build outputs
+AIOJ-main/frontend/node_modules/
+AIOJ-main/frontend/dist/
+
+# General JS build artifacts
+node_modules/
+dist/
+build/
+.next/
+
+# Go build/cache artifacts
+.cache/
+bin/
+*.exe
+remote_judge/judger.linux
+
+# Local temp/debug files
+*.tmp
+.tmp_*
+
+# Logs
+*.log

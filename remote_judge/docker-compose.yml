@@ -1,0 +1,85 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: remote-judge-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: remote_judge
+    ports:
+      - "13306:3306"
+    volumes:
+      - remote_judge_mysql:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: remote-judge-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  judger:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.judger
+    container_name: remote-judge-judger
+    environment:
+      REMOTE_JUDGE_GRPC_ADDR: ":9090"
+      REMOTE_JUDGE_DOCKER_TRANSFER: "copy"
+      REMOTE_JUDGE_PREWARM_IMAGES: "true"
+      REMOTE_JUDGE_SECCOMP_PROFILE: ""
+    ports:
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9090"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+    container_name: remote-judge-server
+    environment:
+      REMOTE_JUDGE_HTTP_ADDR: ":8080"
+      REMOTE_JUDGE_QUEUE: "rabbitmq"
+      REMOTE_JUDGE_REPOSITORY: "mysql"
+      REMOTE_JUDGE_JUDGER_MODE: "remote"
+      REMOTE_JUDGE_JUDGER_ADDR: "judger:9090"
+      REMOTE_JUDGE_MYSQL_DSN: "root:root@tcp(mysql:3306)/remote_judge?parseTime=true&charset=utf8mb4"
+      REMOTE_JUDGE_RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      judger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/system/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  remote_judge_mysql:

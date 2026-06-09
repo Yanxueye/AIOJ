@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package judger;
+
+option go_package = "remote_judge/proto;judgerpb";
+
+service Judger {
+  rpc Judge (JudgeRequest) returns (JudgeResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message JudgeRequest {
+  int64 submission_id = 1;
+  int64 problem_id = 2;
+  string language = 3;
+  string code = 4;
+  int32 time_limit_ms = 5;
+  int32 memory_limit_mb = 6;
+  int32 output_limit_kb = 7;
+  repeated TestCase test_cases = 8;
+}
+
+message TestCase {
+  int32 case_no = 1;
+  string input = 2;
+  string expected = 3;
+}
+
+message JudgeResponse {
+  int64 submission_id = 1;
+  string status = 2;
+  int32 runtime_ms = 3;
+  int32 memory_kb = 4;
+  string compile_output = 5;
+  string error_message = 6;
+  repeated CaseResult case_results = 7;
+}
+
+message CaseResult {
+  int32 case_no = 1;
+  string status = 2;
+  int32 runtime_ms = 3;
+  int32 memory_kb = 4;
+  string stdout_preview = 5;
+  string stderr_preview = 6;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  bool docker_ready = 2;
+  repeated string supported_languages = 3;
+}

@@ -1,0 +1,7 @@
+.git
+.cache
+report_assets
+docker/images
+*.log
+*.tmp
+*.out

@@ -1,0 +1,40 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "architectures": [
+    "SCMP_ARCH_X86_64",
+    "SCMP_ARCH_X86",
+    "SCMP_ARCH_X32"
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "read", "write", "open", "openat", "close", "fstat", "lstat",
+        "stat", "newfstatat", "pread64", "pwrite64", "readv", "writev",
+        "mmap", "mprotect", "munmap", "brk", "mremap", "madvise",
+        "rt_sigaction", "rt_sigprocmask", "rt_sigreturn", "sigaltstack",
+        "clone", "clone3", "fork", "vfork",
+        "execve", "execveat", "exit", "exit_group",
+        "wait4", "waitid",
+        "fcntl", "fchmod", "fchown", "fchdir", "ftruncate",
+        "getcwd", "getdents64", "getpid", "gettid", "getppid",
+        "getrlimit", "setrlimit",
+        "getuid", "geteuid", "getgid", "getegid", "setuid", "setgid",
+        "arch_prctl", "uname", "sched_getaffinity",
+        "nanosleep", "clock_gettime", "clock_nanosleep",
+        "set_tid_address", "set_robust_list", "futex",
+        "tgkill", "tkill", "kill",
+        "sched_yield", "restart_syscall",
+        "ioctl", "dup", "dup2", "dup3", "prctl",
+        "pipe", "pipe2", "socketpair",
+        "epoll_create1", "epoll_ctl", "epoll_pwait",
+        "eventfd2",
+        "getrandom", "rseq",
+        "memfd_create",
+        "lseek", "readlink", "readlinkat",
+        "getpeername", "getsockname", "getsockopt",
+        "shutdown", "getsid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}
