@@ -36,13 +36,28 @@ export const useSubmissionStore = defineStore('submission', () => {
     if (!res.data?.id || TERMINAL_STATUSES.has(res.data.status)) {
       return res.data
     }
-    const finalResult = await waitForResult(res.data.id, res.data.traceId)
+    let finalResult = null
+    try {
+      finalResult = await waitForResultStream(res.data.id, res.data.traceId)
+    } catch {
+      finalResult = await waitForResult(res.data.id, res.data.traceId)
+    }
     currentResult.value = finalResult
     return finalResult
   }
 
   async function getDetail(id) {
     const res = await submissionApi.getDetail(id)
+    return res.data
+  }
+
+  async function getCases(id) {
+    const res = await submissionApi.getCases(id)
+    return res.data
+  }
+
+  async function getOutput(id) {
+    const res = await submissionApi.getOutput(id)
     return res.data
   }
 
@@ -68,5 +83,35 @@ export const useSubmissionStore = defineStore('submission', () => {
     return latest || currentResult.value
   }
 
-  return { submissions, total, loading, currentResult, fetchSubmissions, submit, getDetail }
+  function waitForResultStream(id, traceId = '') {
+    return new Promise((resolve, reject) => {
+      if (typeof EventSource === 'undefined') {
+        reject(new Error('EventSource unsupported'))
+        return
+      }
+
+      const token = localStorage.getItem('toj_token')
+      const url = submissionApi.stream(id)
+      const es = new EventSource(`${url}?token=${encodeURIComponent(token || '')}`)
+
+      es.addEventListener('submission', event => {
+        const data = JSON.parse(event.data)
+        if (traceId && data?.traceId && data.traceId !== traceId) {
+          return
+        }
+        currentResult.value = data
+        if (TERMINAL_STATUSES.has(data?.status)) {
+          es.close()
+          resolve(data)
+        }
+      })
+
+      es.addEventListener('error', () => {
+        es.close()
+        reject(new Error('stream error'))
+      })
+    })
+  }
+
+  return { submissions, total, loading, currentResult, fetchSubmissions, submit, getDetail, getCases, getOutput }
 })

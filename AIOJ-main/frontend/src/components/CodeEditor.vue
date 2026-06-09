@@ -30,7 +30,9 @@ import * as monaco from 'monaco-editor'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   language: { type: String, default: 'cpp' },
-  draftKey: { type: String, default: '' }
+  draftKey: { type: String, default: '' },
+  legacyDraftKey: { type: String, default: '' },
+  templates: { type: Object, default: () => ({}) }
 })
 
 const emit = defineEmits(['update:modelValue', 'change-language'])
@@ -47,6 +49,10 @@ const TEMPLATES = {
   go: 'package main\n\nimport (\n    "fmt"\n)\n\nfunc main() {\n    fmt.Println()\n}\n'
 }
 
+function mergedTemplates() {
+  return { ...TEMPLATES, ...props.templates }
+}
+
 const currentLang = ref(props.language)
 const fontSize = ref(14)
 const draftStatus = ref('草稿保护已开启')
@@ -58,7 +64,7 @@ let saveTimer = null
 onMounted(() => {
   nextTick(() => {
     const initialDraft = readDraft(currentLang.value)
-    const initialValue = props.modelValue || initialDraft?.code || TEMPLATES[currentLang.value] || ''
+    const initialValue = props.modelValue || initialDraft?.code || mergedTemplates()[currentLang.value] || ''
     if (initialDraft?.updatedAt) {
       draftStatus.value = `已恢复 ${formatTime(initialDraft.updatedAt)}`
     }
@@ -103,15 +109,10 @@ watch(() => props.modelValue, val => {
 function onLangChange(lang) {
   if (editor) {
     const model = editor.getModel()
-    const currentCode = editor.getValue()
     monaco.editor.setModelLanguage(model, lang)
-    if (!currentCode.trim() || isTemplateCode(currentCode)) {
-      const draft = readDraft(lang)
-      editor.setValue(draft?.code || TEMPLATES[lang] || '')
-      draftStatus.value = draft?.updatedAt ? `已恢复 ${formatTime(draft.updatedAt)}` : '草稿保护已开启'
-    } else {
-      scheduleDraftSave(currentCode)
-    }
+    const draft = readDraft(lang)
+    editor.setValue(draft?.code || mergedTemplates()[lang] || '')
+    draftStatus.value = draft?.updatedAt ? `已恢复 ${formatTime(draft.updatedAt)}` : '草稿保护已开启'
   }
   refreshDraftState(lang)
   emit('change-language', lang)
@@ -119,7 +120,7 @@ function onLangChange(lang) {
 
 function resetCode() {
   if (editor) {
-    editor.setValue(TEMPLATES[currentLang.value] || '')
+    editor.setValue(mergedTemplates()[currentLang.value] || '')
   }
 }
 
@@ -134,11 +135,15 @@ onBeforeUnmount(() => {
 defineExpose({ getCode: () => editor?.getValue() || '', setCode: val => editor?.setValue(val) })
 
 function isTemplateCode(value) {
-  return Object.values(TEMPLATES).some(t => value.trim() === t.trim())
+  return Object.values(mergedTemplates()).some(t => value.trim() === t.trim())
 }
 
 function storageKey(lang = currentLang.value) {
   return props.draftKey ? `terminal-oj:code-draft:${props.draftKey}:${lang}` : ''
+}
+
+function legacyStorageKey(lang = currentLang.value) {
+  return props.legacyDraftKey ? `terminal-oj:code-draft:${props.legacyDraftKey}:${lang}` : ''
 }
 
 function readDraft(lang = currentLang.value) {
@@ -146,10 +151,11 @@ function readDraft(lang = currentLang.value) {
   if (!key) return null
   try {
     const raw = window.localStorage.getItem(key)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (typeof parsed?.code === 'string') return parsed
-    if (typeof raw === 'string') return { code: raw, updatedAt: null }
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (typeof parsed?.code === 'string') return parsed
+      if (typeof raw === 'string') return { code: raw, updatedAt: null }
+    }
   } catch {
     draftStatus.value = '本地暂存不可用'
   }

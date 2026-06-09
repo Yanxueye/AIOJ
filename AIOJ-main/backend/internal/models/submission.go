@@ -44,6 +44,7 @@ type Submission struct {
 	ProblemID      uint64                 `gorm:"index;not null" json:"problemId"`
 	ProblemTitle   string                 `gorm:"type:varchar(128)" json:"problemTitle"`
 	TraceID        string                 `gorm:"type:varchar(128);index" json:"traceId"`
+	Source         string                 `gorm:"type:varchar(16);index;default:'submit'" json:"source"`
 	Language       string                 `gorm:"type:varchar(16)" json:"language"`
 	Code           string                 `gorm:"type:longtext" json:"code,omitempty"`
 	CodeLength     int                    `json:"codeLength"`

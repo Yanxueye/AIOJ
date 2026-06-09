@@ -96,17 +96,24 @@ func (MockSandbox) Judge(_ context.Context, req *JudgeRequest) (*JudgeResponse, 
 	memoryKB := int32((1500 + int(seed%40)*100))
 	return &JudgeResponse{
 		SubmissionID: req.SubmissionID,
-		Status:       status,
+		Status:       resolveMockStatus(req.RunMode, status),
 		RuntimeMS:    runtime,
 		MemoryMB:     memory,
 		MemoryKB:     memoryKB,
 		CaseResults: []CaseResult{
 			{
 				CaseNo:    1,
-				Status:    status,
+				Status:    resolveMockStatus(req.RunMode, status),
 				RuntimeMS: runtime,
 				MemoryKB:  memoryKB,
 			},
 		},
 	}, nil
+}
+
+func resolveMockStatus(runMode, status string) string {
+	if runMode == "run" && status == "Wrong Answer" {
+		return "Accepted"
+	}
+	return status
 }

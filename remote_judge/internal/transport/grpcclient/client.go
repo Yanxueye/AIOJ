@@ -63,6 +63,7 @@ func (c *Client) Judge(ctx context.Context, req domain.JudgeRequest) (domain.Jud
 		TimeLimitMs:   int32(req.TimeLimitMs),
 		MemoryLimitMB: int32(req.MemoryLimitMB),
 		OutputLimitKB: int32(req.OutputLimitKB),
+		RunMode:       req.RunMode,
 		TestCases:     testCases,
 	}, resp)
 	if err != nil {

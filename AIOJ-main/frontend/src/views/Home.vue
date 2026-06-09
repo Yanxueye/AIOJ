@@ -40,6 +40,10 @@
               <el-icon :size="32" color="#409eff"><Document /></el-icon>
               <span>题目列表</span>
             </div>
+            <div class="entry-card" @click="$router.push('/study-plans')">
+              <el-icon :size="32" color="#8b5cf6"><Collection /></el-icon>
+              <span>学习计划</span>
+            </div>
             <div class="entry-card" @click="$router.push('/status')">
               <el-icon :size="32" color="#67c23a"><DataAnalysis /></el-icon>
               <span>评测状态</span>
@@ -49,7 +53,7 @@
               <span>个人中心</span>
             </div>
             <div class="entry-card" @click="$router.push('/ai')">
-              <el-icon :size="32" color="#8b5cf6"><MagicStick /></el-icon>
+              <el-icon :size="32" color="#ec4899"><MagicStick /></el-icon>
               <span>AI 训练</span>
             </div>
           </div>
@@ -84,6 +88,26 @@
         </div>
 
         <div class="card">
+          <div class="card-title">每日一题</div>
+          <div v-if="dailyChallenge" class="daily-card" @click="$router.push(`/problem/${dailyChallenge.problemId}`)">
+            <div class="daily-date">{{ dailyChallenge.date }}</div>
+            <div class="daily-title">#{{ dailyChallenge.problemId }} {{ dailyChallenge.title }}</div>
+            <el-tag :type="diffTagType(dailyChallenge.difficulty)" size="small">{{ dailyChallenge.difficulty }}</el-tag>
+          </div>
+        </div>
+
+        <div class="card" v-if="userStore.isLoggedIn">
+          <div class="card-title">学习打卡</div>
+          <div v-if="checkins.length" class="checkin-list">
+            <div v-for="item in checkins.slice(0, 5)" :key="item.id" class="checkin-item">
+              <span>{{ item.date }}</span>
+              <strong>{{ item.count }} 次完成</strong>
+            </div>
+          </div>
+          <el-empty v-else description="今天还没有打卡" :image-size="70" />
+        </div>
+
+        <div class="card">
           <div class="card-title">热门题目</div>
           <div class="hot-problems">
             <div
@@ -107,14 +131,23 @@
 import { ref, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { problemApi } from '@/api/problem'
+import { studyPlanApi } from '@/api/study_plan'
 import AnnouncementBoard from '@/components/AnnouncementBoard.vue'
 
 const userStore = useUserStore()
 const hotProblems = ref([])
+const dailyChallenge = ref(null)
+const checkins = ref([])
 
 onMounted(async () => {
-  const res = await problemApi.getList({ page: 1, pageSize: 6 })
-  hotProblems.value = res.data.list
+  const [problemRes, dailyRes, checkinRes] = await Promise.all([
+    problemApi.getList({ page: 1, pageSize: 6 }),
+    studyPlanApi.getDailyChallenge(),
+    userStore.isLoggedIn ? studyPlanApi.getCheckins() : Promise.resolve({ data: { items: [] } })
+  ])
+  hotProblems.value = problemRes.data.list
+  dailyChallenge.value = dailyRes.data
+  checkins.value = checkinRes.data.items || []
 })
 
 function diffTagType(d) {
@@ -241,6 +274,31 @@ function diffTagType(d) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.daily-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+}
+.daily-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.daily-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.checkin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.checkin-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
 }
 .hot-item {
   display: flex;

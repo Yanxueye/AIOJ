@@ -47,11 +47,17 @@ async function handleSubmit() {
       difficultyScore: form.difficultyScore,
       tags: form.tags,
       source: form.source,
+      status: form.status,
+      reviewComment: form.reviewComment,
       timeLimit: form.timeLimit,
       memoryLimit: form.memoryLimit,
       outputLimitKb: form.outputLimitKb,
       content: form.content,
-      testCases: form.testCases
+      constraints: form.constraints,
+      editorial: form.editorial,
+      samples: form.samples,
+      testCases: form.testCases,
+      templates: form.templates
     })
     ElMessage.success('题目创建成功')
     router.push(`/admin/problems/${res.data.id}/edit`)

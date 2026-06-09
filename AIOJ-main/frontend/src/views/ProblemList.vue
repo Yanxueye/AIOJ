@@ -22,8 +22,14 @@
         <el-select v-model="filters.tag" placeholder="算法标签" clearable style="width: 140px" @change="loadProblems">
           <el-option v-for="t in tags" :key="t" :label="t" :value="t" />
         </el-select>
+        <el-select v-model="filters.status" placeholder="做题状态" clearable style="width: 140px" @change="loadProblems">
+          <el-option label="已通过" value="accepted" />
+          <el-option label="已尝试" value="attempted" />
+          <el-option label="未尝试" value="unattempted" />
+          <el-option label="已收藏" value="favorite" />
+        </el-select>
       </div>
-      <el-button v-if="userStore.isAdmin" type="primary" @click="router.push('/admin/problems/new')">
+      <el-button v-if="userStore.canManageProblems" type="primary" @click="router.push('/admin/problems/new')">
         添加题目
       </el-button>
     </div>
@@ -69,7 +75,7 @@
             {{ row.acceptRate }}%
           </template>
         </el-table-column>
-        <el-table-column v-if="userStore.isAdmin" label="操作" width="110" fixed="right">
+        <el-table-column v-if="userStore.canManageProblems" label="操作" width="110" fixed="right">
           <template #default="{ row }">
             <el-button text type="primary" @click.stop="goToEdit(row.id)">修改</el-button>
           </template>
@@ -104,7 +110,7 @@ const userStore = useUserStore()
 
 const tags = ['动态规划', '贪心', '搜索', '图论', '数学', '字符串', '数据结构', '模拟', '排序', '二分']
 
-const filters = reactive({ keyword: '', difficulty: '', tag: '' })
+const filters = reactive({ keyword: '', difficulty: '', tag: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20 })
 
 let searchTimer = null
@@ -119,7 +125,8 @@ function loadProblems() {
     pageSize: pagination.pageSize,
     keyword: filters.keyword,
     difficulty: filters.difficulty,
-    tag: filters.tag
+    tag: filters.tag,
+    status: filters.status
   })
 }
 

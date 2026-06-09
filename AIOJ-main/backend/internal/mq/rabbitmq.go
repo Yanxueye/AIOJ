@@ -20,6 +20,7 @@ type SubmitTask struct {
 	ProblemID    uint64    `json:"problem_id"`
 	ProblemTitle string    `json:"problem_title"`
 	TraceID      string    `json:"trace_id"`
+	Source       string    `json:"source"`
 	Language     string    `json:"language"`
 	Code         string    `json:"code"`
 	EnqueuedAt   time.Time `json:"enqueued_at"`

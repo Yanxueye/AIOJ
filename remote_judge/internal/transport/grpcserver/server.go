@@ -67,6 +67,7 @@ func (s *Server) Judge(ctx context.Context, req *pb.JudgeRequest) (*pb.JudgeResp
 		TimeLimitMs:   int(req.TimeLimitMs),
 		MemoryLimitMB: int(req.MemoryLimitMB),
 		OutputLimitKB: int(req.OutputLimitKB),
+		RunMode:       req.RunMode,
 		TestCases:     testCases,
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	aisvc "github.com/terminaloj/backend/internal/ai"
 	"github.com/terminaloj/backend/internal/config"
+	"github.com/terminaloj/backend/internal/judger"
 	"github.com/terminaloj/backend/internal/middleware"
 	"github.com/terminaloj/backend/internal/mq"
 	"github.com/terminaloj/backend/internal/utils"
@@ -12,7 +13,7 @@ import (
 
 // BuildRouter wires middlewares + route groups. Grouping keeps the auth
 // boundary explicit and makes it trivial to add versioned endpoints later.
-func BuildRouter(db *gorm.DB, broker *mq.Broker, jwt *utils.JWTManager, cfg *config.Config) *gin.Engine {
+func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, jwt *utils.JWTManager, cfg *config.Config) *gin.Engine {
 	gin.SetMode(cfg.Server.Mode)
 	r := gin.New()
 	r.Use(gin.Logger(), middleware.Recovery(), middleware.CORS())
@@ -20,9 +21,11 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jwt *utils.JWTManager, cfg *con
 	auth := &AuthHandler{DB: db, JWT: jwt}
 	user := &UserHandler{DB: db}
 	problem := &ProblemHandler{DB: db}
+	studyPlan := &StudyPlanHandler{DB: db}
 	announcement := &AnnouncementHandler{DB: db}
-	submission := &SubmissionHandler{DB: db, Broker: broker}
+	submission := &SubmissionHandler{DB: db, Broker: broker, Judger: jdClient}
 	ai := &AIHandler{DB: db, Client: aisvc.NewClient(cfg.AI)}
+	audit := &AuditHandler{DB: db}
 
 	r.GET("/healthz", func(c *gin.Context) { utils.OK(c, gin.H{"status": "ok"}) })
 
@@ -31,6 +34,9 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jwt *utils.JWTManager, cfg *con
 		api.POST("/auth/login", auth.Login)
 		api.POST("/auth/register", auth.Register)
 		api.GET("/announcements", announcement.List)
+		api.GET("/daily-challenge", studyPlan.DailyChallenge)
+		api.GET("/study-plans", optionalAuth(jwt), studyPlan.List)
+		api.GET("/study-plans/:id", optionalAuth(jwt), studyPlan.Detail)
 
 		// Public GET for list/detail — optional token is read by handler to
 		// enrich the response with the caller's `accepted` flag.
@@ -41,19 +47,39 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jwt *utils.JWTManager, cfg *con
 	{
 		authed.GET("/user/profile", user.Profile)
 		authed.PUT("/user/profile", user.UpdateProfile)
+		authed.GET("/study-plans/checkins", studyPlan.Checkins)
+		authed.GET("/admin/users", middleware.RequireAdmin(), user.AdminList)
+		authed.PUT("/admin/users/:id/role", middleware.RequireAdmin(), user.AdminUpdateRole)
+		authed.GET("/admin/audit-logs", middleware.RequireAdmin(), audit.List)
 
 		authed.GET("/problems/:id", problem.Detail)
-		authed.POST("/problems", middleware.RequireAdmin(), problem.Create)
-		authed.GET("/admin/problems/:id", middleware.RequireAdmin(), problem.AdminDetail)
-		authed.PUT("/problems/:id", middleware.RequireAdmin(), problem.Update)
+		authed.POST("/problems/:id/favorite", problem.Favorite)
+		authed.DELETE("/problems/:id/favorite", problem.Unfavorite)
+		authed.POST("/problems/:id/solution", problem.UpsertSolution)
+		authed.GET("/problems/:id/my-solution", problem.UserSolutionForProblem)
+		authed.GET("/my/solutions", problem.MySolutions)
+		authed.GET("/my/solutions/:id", problem.MySolutionDetail)
+		authed.GET("/solutions/:id", problem.SolutionDetail)
+		authed.POST("/problems", middleware.RequireProblemEditor(), problem.Create)
+		authed.GET("/admin/problems/:id", middleware.RequireProblemEditor(), problem.AdminDetail)
+		authed.GET("/admin/problems/:id/versions", middleware.RequireProblemEditor(), problem.Versions)
+		authed.PUT("/problems/:id", middleware.RequireProblemEditor(), problem.Update)
+		authed.POST("/admin/problems/:id/publish", middleware.RequireReviewer(), problem.Publish)
+		authed.POST("/admin/problems/:id/rollback", middleware.RequireProblemEditor(), problem.Rollback)
+		authed.POST("/admin/problems/:id/rejudge", middleware.RequireOperator(), problem.Rejudge)
+		authed.GET("/admin/problems/:id/rejudge-jobs", middleware.RequireOperator(), problem.RejudgeJobs)
 		authed.DELETE("/problems/:id", middleware.RequireAdmin(), problem.Delete)
 
+		authed.POST("/problems/:id/run", submission.Run)
 		authed.POST("/submissions",
 			middleware.PerUserRateLimit(cfg.RateLimit.SubmitPerMinute, cfg.RateLimit.SubmitBurst),
 			submission.Submit,
 		)
 		authed.GET("/submissions", submission.List)
 		authed.GET("/submissions/:id", submission.Detail)
+		authed.GET("/submissions/:id/stream", submission.Stream)
+		authed.GET("/submissions/:id/cases", submission.Cases)
+		authed.GET("/submissions/:id/output", submission.Output)
 
 		authed.POST("/ai/chat", ai.Chat)
 		authed.GET("/ai/history", ai.History)

@@ -13,6 +13,9 @@
           <router-link to="/problems" :class="{ active: route.name === 'problems' }">
             <el-icon><Document /></el-icon>题库
           </router-link>
+          <router-link to="/study-plans" :class="{ active: route.name === 'study-plans' || route.name === 'study-plan-detail' }">
+            <el-icon><Collection /></el-icon>学习计划
+          </router-link>
           <router-link to="/status" :class="{ active: route.name === 'status' }">
             <el-icon><DataAnalysis /></el-icon>评测
           </router-link>
@@ -36,8 +39,17 @@
                 <el-dropdown-item command="profile">
                   <el-icon><User /></el-icon>个人中心
                 </el-dropdown-item>
-                <el-dropdown-item v-if="userStore.isAdmin" command="admin-problem">
+                <el-dropdown-item command="my-solutions">
+                  <el-icon><Document /></el-icon>我的题解
+                </el-dropdown-item>
+                <el-dropdown-item v-if="userStore.canManageProblems" command="admin-problem">
                   <el-icon><EditPen /></el-icon>题目管理
+                </el-dropdown-item>
+                <el-dropdown-item v-if="userStore.isAdmin" command="admin-users">
+                  <el-icon><UserFilled /></el-icon>用户角色
+                </el-dropdown-item>
+                <el-dropdown-item v-if="userStore.isAdmin" command="admin-audit">
+                  <el-icon><Document /></el-icon>审计日志
                 </el-dropdown-item>
                 <el-dropdown-item command="logout" divided>
                   <el-icon><SwitchButton /></el-icon>退出登录
@@ -70,8 +82,14 @@ const userStore = useUserStore()
 function handleCommand(cmd) {
   if (cmd === 'profile') {
     router.push('/profile')
+  } else if (cmd === 'my-solutions') {
+    router.push('/my/solutions')
   } else if (cmd === 'admin-problem') {
     router.push('/admin/problems/new')
+  } else if (cmd === 'admin-users') {
+    router.push('/admin/users')
+  } else if (cmd === 'admin-audit') {
+    router.push('/admin/audit-logs')
   } else if (cmd === 'logout') {
     userStore.logout()
     router.push('/login')

@@ -340,18 +340,32 @@ func (h *AIHandler) problemContext(problemID *uint64) (*aisvc.ProblemContext, er
 		return nil, errors.New("empty problem id")
 	}
 	var p models.Problem
-	if err := h.DB.First(&p, *problemID).Error; err != nil {
+	if err := h.DB.Preload("PublishedVersion").Preload("CurrentVersion").First(&p, *problemID).Error; err != nil {
 		return nil, err
+	}
+	version := p.PublishedVersion
+	if version == nil {
+		version = p.CurrentVersion
+	}
+	content := ""
+	timeLimit := 0
+	memoryLimit := 0
+	tags := append([]string(nil), p.Tags...)
+	if version != nil {
+		content = version.Content
+		timeLimit = version.TimeLimit
+		memoryLimit = version.MemoryLimit
+		tags = append([]string(nil), version.Tags...)
 	}
 	return &aisvc.ProblemContext{
 		ID:              p.ID,
 		Title:           p.Title,
 		Difficulty:      p.Difficulty,
 		DifficultyScore: p.DifficultyScore,
-		Tags:            append([]string(nil), p.Tags...),
-		Content:         p.Content,
-		TimeLimit:       p.TimeLimit,
-		MemoryLimit:     p.MemoryLimit,
+		Tags:            tags,
+		Content:         content,
+		TimeLimit:       timeLimit,
+		MemoryLimit:     memoryLimit,
 	}, nil
 }
 

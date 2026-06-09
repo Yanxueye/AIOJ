@@ -32,6 +32,9 @@
           <el-button style="width: 100%; margin-top: 8px; margin-left: 0" @click="$router.push('/ai')">
             <el-icon><MagicStick /></el-icon>AI 训练
           </el-button>
+          <el-button style="width: 100%; margin-top: 8px; margin-left: 0" @click="$router.push('/my/solutions')">
+            <el-icon><Document /></el-icon>我的题解
+          </el-button>
         </div>
       </div>
 
@@ -80,6 +83,43 @@
           :difficulty-data="profile.solvedByDifficulty || {}"
           :algorithm-data="profile.solvedByAlgorithm || {}"
         />
+
+        <div class="card section-card">
+          <div class="section-title">收藏题目</div>
+          <div v-if="profile?.favorites?.length" class="favorite-list">
+            <router-link
+              v-for="item in profile.favorites"
+              :key="item.problemId"
+              :to="`/problem/${item.problemId}`"
+              class="favorite-item"
+            >
+              <div class="favorite-title">#{{ item.problemId }} {{ item.title }}</div>
+              <div class="favorite-meta">
+                <span>{{ item.difficulty }}</span>
+                <span>通过率 {{ item.acceptRate }}%</span>
+                <span>收藏于 {{ item.favoritedAt }}</span>
+              </div>
+            </router-link>
+          </div>
+          <el-empty v-else description="还没有收藏题目" :image-size="80" />
+        </div>
+
+        <div class="card section-card">
+          <div class="section-title">最近提交</div>
+          <div v-if="profile?.recentSubmissions?.length" class="timeline-list">
+            <div v-for="item in profile.recentSubmissions" :key="item.submissionId" class="timeline-item">
+              <router-link :to="`/problem/${item.problemId}`" class="timeline-problem">
+                #{{ item.problemId }} {{ item.problemTitle }}
+              </router-link>
+              <div class="timeline-meta">
+                <span :class="statusClass(item.status)">{{ item.status }}</span>
+                <span>{{ item.language }}</span>
+                <span>{{ item.createdAt }}</span>
+              </div>
+            </div>
+          </div>
+          <el-empty v-else description="还没有提交记录" :image-size="80" />
+        </div>
       </div>
     </div>
 
@@ -144,6 +184,19 @@ async function handleSave() {
     saving.value = false
   }
 }
+
+function statusClass(status) {
+  const map = {
+    Accepted: 'status-accepted',
+    'Wrong Answer': 'status-wrong',
+    'Compile Error': 'status-ce',
+    'Time Limit Exceeded': 'status-tle',
+    'Memory Limit Exceeded': 'status-mle',
+    'Output Limit Exceeded': 'status-ole',
+    'System Error': 'status-system'
+  }
+  return map[status] || 'status-pending'
+}
 </script>
 
 <style scoped>
@@ -192,6 +245,14 @@ async function handleSave() {
   flex-direction: column;
   gap: 20px;
 }
+.section-card {
+  padding: 20px;
+}
+.section-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
 .stats-overview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -220,6 +281,36 @@ async function handleSave() {
 .stat-label {
   font-size: 13px;
   color: var(--text-muted);
+}
+.favorite-list,
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.favorite-item,
+.timeline-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fafbfc;
+}
+.favorite-item {
+  display: block;
+}
+.favorite-title,
+.timeline-problem {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.favorite-meta,
+.timeline-meta {
+  margin-top: 6px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 @media (max-width: 960px) {

@@ -41,5 +41,28 @@ export const useProblemStore = defineStore('problem', () => {
     }
   }
 
-  return { problems, currentProblem, total, loading, fetchProblems, fetchProblem, fetchAdminProblem }
+  async function runProblem(id, data) {
+    const res = await problemApi.runCode(id, data)
+    return res.data
+  }
+
+  async function favoriteProblem(id) {
+    const res = await problemApi.favorite(id)
+    if (currentProblem.value?.id === Number(id)) {
+      currentProblem.value = { ...currentProblem.value, favorite: true }
+    }
+    problems.value = problems.value.map(item => item.id === Number(id) ? { ...item, favorite: true } : item)
+    return res.data
+  }
+
+  async function unfavoriteProblem(id) {
+    const res = await problemApi.unfavorite(id)
+    if (currentProblem.value?.id === Number(id)) {
+      currentProblem.value = { ...currentProblem.value, favorite: false }
+    }
+    problems.value = problems.value.map(item => item.id === Number(id) ? { ...item, favorite: false } : item)
+    return res.data
+  }
+
+  return { problems, currentProblem, total, loading, fetchProblems, fetchProblem, fetchAdminProblem, runProblem, favoriteProblem, unfavoriteProblem }
 })

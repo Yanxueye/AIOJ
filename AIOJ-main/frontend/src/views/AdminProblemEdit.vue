@@ -18,9 +18,42 @@
       @submit="handleSubmit"
     >
       <template #actions>
+        <el-button type="warning" plain :loading="submitting" @click="handlePublish">发布题目</el-button>
         <el-button type="danger" plain :loading="deleting" @click="handleDelete">删除题目</el-button>
       </template>
     </ProblemForm>
+
+    <div v-if="initialValue?.versions?.length" class="card version-card">
+      <div class="version-head">版本历史</div>
+      <el-table :data="initialValue.versions" size="small" stripe>
+        <el-table-column prop="versionNo" label="版本" width="80" />
+        <el-table-column prop="title" label="标题" min-width="220" />
+        <el-table-column prop="difficulty" label="难度" width="100" />
+        <el-table-column prop="createdAt" label="创建时间" min-width="180" />
+        <el-table-column prop="publishedAt" label="发布时间" min-width="180" />
+        <el-table-column label="操作" width="220">
+          <template #default="{ row }">
+            <el-button text type="warning" @click="handlePublishVersion(row.id)">发布此版本</el-button>
+            <el-button text type="primary" @click="handleRollback(row.id)">回滚到此版本</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <div class="card version-card">
+      <div class="version-head">重判任务</div>
+      <div class="job-actions">
+        <el-input v-model="rejudgeReason" placeholder="重判原因，例如更新了隐藏测试或修正了题面" />
+        <el-button type="primary" @click="handleRejudge">创建重判任务</el-button>
+      </div>
+      <el-table :data="rejudgeJobs" size="small" stripe>
+        <el-table-column prop="id" label="任务 ID" width="120" />
+        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column prop="totalSubmissions" label="提交数" width="100" />
+        <el-table-column prop="processedCount" label="已处理" width="100" />
+        <el-table-column prop="reason" label="原因" min-width="220" />
+      </el-table>
+    </div>
   </div>
 </template>
 
@@ -38,6 +71,8 @@ const problemStore = useProblemStore()
 const problemFormRef = ref(null)
 const submitting = ref(false)
 const deleting = ref(false)
+const rejudgeReason = ref('')
+const rejudgeJobs = ref([])
 
 const problemID = computed(() => route.params.id)
 const initialValue = computed(() => problemStore.currentProblem || {})
@@ -56,6 +91,8 @@ function validateForm(form) {
 
 async function loadProblem() {
   await problemStore.fetchAdminProblem(problemID.value)
+  const jobs = await problemApi.getRejudgeJobs(problemID.value)
+  rejudgeJobs.value = jobs.data.items || []
 }
 
 async function handleSubmit() {
@@ -72,17 +109,68 @@ async function handleSubmit() {
       difficultyScore: form.difficultyScore,
       tags: form.tags,
       source: form.source,
+      status: form.status,
+      reviewComment: form.reviewComment,
       timeLimit: form.timeLimit,
       memoryLimit: form.memoryLimit,
       outputLimitKb: form.outputLimitKb,
       content: form.content,
-      testCases: form.testCases
+      constraints: form.constraints,
+      editorial: form.editorial,
+      samples: form.samples,
+      testCases: form.testCases,
+      templates: form.templates
     })
     ElMessage.success('题目更新成功')
     await loadProblem()
   } finally {
     submitting.value = false
   }
+}
+
+async function handlePublish() {
+  submitting.value = true
+  try {
+    await problemApi.publish(problemID.value, {
+      reviewComment: problemFormRef.value?.form?.reviewComment || ''
+    })
+    ElMessage.success('题目已发布')
+    await loadProblem()
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function handlePublishVersion(versionID) {
+  submitting.value = true
+  try {
+    await problemApi.publish(problemID.value, {
+      reviewComment: problemFormRef.value?.form?.reviewComment || '',
+      versionId: versionID
+    })
+    ElMessage.success('指定版本已发布')
+    await loadProblem()
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function handleRollback(versionID) {
+  submitting.value = true
+  try {
+    await problemApi.rollback(problemID.value, { versionId: versionID })
+    ElMessage.success('已回滚到指定版本')
+    await loadProblem()
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function handleRejudge() {
+  await problemApi.rejudge(problemID.value, { reason: rejudgeReason.value })
+  ElMessage.success('重判任务已创建')
+  rejudgeReason.value = ''
+  await loadProblem()
 }
 
 async function handleDelete() {
@@ -122,5 +210,18 @@ onMounted(loadProblem)
 }
 .page-header p {
   color: var(--text-secondary);
+}
+.version-card {
+  margin-top: 20px;
+}
+.version-head {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.job-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 </style>

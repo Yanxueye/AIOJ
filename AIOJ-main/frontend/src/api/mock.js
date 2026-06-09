@@ -17,7 +17,9 @@ function generateProblems(count = 50) {
       tags: [ALGORITHMS[i % 10], ALGORITHMS[(i + 3) % 10]],
       acceptRate: (40 + Math.random() * 50).toFixed(1),
       submitCount: Math.floor(100 + Math.random() * 5000),
-      accepted: i % 4 === 0
+      accepted: i % 4 === 0,
+      attempted: i % 3 === 0,
+      favorite: i % 5 === 0
     })
   }
   return list
@@ -130,6 +132,61 @@ const USER_PROFILE = {
   ]
 }
 
+const ADMIN_USERS = [
+  { id: 1, username: 'coder_test', email: 'test@terminaloj.com', role: 'user', rating: 1520, registeredAt: '2026-03-15' },
+  { id: 2, username: 'admin', email: 'admin@terminaloj.com', role: 'admin', rating: 1800, registeredAt: '2026-03-10' }
+]
+
+const AUDIT_LOGS = [
+  { id: 1, userId: 2, username: 'admin', userRole: 'admin', resourceType: 'problem', resourceId: '1001', action: 'publish', detail: 'published version 1', createdAt: new Date().toISOString() },
+  { id: 2, userId: 2, username: 'admin', userRole: 'admin', resourceType: 'rejudge_job', resourceId: '1', action: 'create', detail: 'created rejudge job for problem 1001', createdAt: new Date().toISOString() }
+]
+
+const STUDY_PLANS = [
+  {
+    id: 1,
+    title: '哈希与字符串入门',
+    description: '适合刚开始刷题的用户，覆盖哈希表、字符串和基础动态规划。',
+    difficulty: '简单',
+    tags: ['哈希表', '字符串', '动态规划'],
+    problemCount: 3,
+    completedCount: 1,
+    items: [
+      { id: 1, problemId: 1001, orderNo: 1, title: '两数之和', difficulty: '简单' },
+      { id: 2, problemId: 1002, orderNo: 2, title: '最长回文子串', difficulty: '中等' },
+      { id: 3, problemId: 1004, orderNo: 3, title: '零钱兑换', difficulty: '中等' }
+    ]
+  },
+  {
+    id: 2,
+    title: '图搜索与进阶结构',
+    description: '围绕搜索、图论和堆结构的练习题单。',
+    difficulty: '中等',
+    tags: ['搜索', '图论', '堆'],
+    problemCount: 2,
+    completedCount: 0,
+    items: [
+      { id: 4, problemId: 1005, orderNo: 1, title: '岛屿数量', difficulty: '中等' },
+      { id: 5, problemId: 1003, orderNo: 2, title: '合并 K 个升序链表', difficulty: '困难' }
+    ]
+  }
+]
+
+const DAILY_CHALLENGE = {
+  id: 1,
+  problemId: 1002,
+  title: '最长回文子串',
+  difficulty: '中等',
+  date: '2026-06-09'
+}
+
+const STUDY_CHECKINS = [
+  { id: 1, userId: 2, date: '2026-06-10', count: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 2, userId: 2, date: '2026-06-09', count: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+]
+
+const SOLUTIONS = []
+
 export const mockApi = {
   async login({ username, password }) {
     await delay(500)
@@ -156,12 +213,60 @@ export const mockApi = {
     return wrap({ ...USER_PROFILE, ...data })
   },
 
-  async getProblems({ page = 1, pageSize = 20, keyword = '', difficulty = '', tag = '' } = {}) {
+  async getAdminUsers() {
+    await delay(200)
+    return wrap({ items: ADMIN_USERS })
+  },
+
+  async updateAdminUserRole(id, data) {
+    await delay(200)
+    const user = ADMIN_USERS.find(item => item.id === Number(id))
+    if (!user) throw new Error('用户不存在')
+    user.role = data.role
+    return wrap({ id: user.id, username: user.username, role: user.role })
+  },
+
+  async getAuditLogs({ action = '', resourceType = '', username = '' } = {}) {
+    await delay(200)
+    let items = [...AUDIT_LOGS]
+    if (action) items = items.filter(item => item.action === action)
+    if (resourceType) items = items.filter(item => item.resourceType === resourceType)
+    if (username) items = items.filter(item => item.username === username)
+    return wrap({ items })
+  },
+
+  async getStudyPlans() {
+    await delay(160)
+    return wrap({ items: STUDY_PLANS.map(({ items, ...rest }) => rest) })
+  },
+
+  async getStudyPlanDetail(id) {
+    await delay(160)
+    const plan = STUDY_PLANS.find(item => item.id === Number(id))
+    if (!plan) throw new Error('题单不存在')
+    return wrap(plan)
+  },
+
+  async getDailyChallenge() {
+    await delay(120)
+    return wrap(DAILY_CHALLENGE)
+  },
+
+  async getStudyCheckins() {
+    await delay(120)
+    return wrap({ items: STUDY_CHECKINS })
+  },
+
+  async getProblems({ page = 1, pageSize = 20, keyword = '', difficulty = '', tag = '', status = '' } = {}) {
     await delay(400)
     let filtered = [...PROBLEMS]
     if (keyword) filtered = filtered.filter(p => p.title.includes(keyword) || String(p.id).includes(keyword))
     if (difficulty) filtered = filtered.filter(p => p.difficulty === difficulty)
     if (tag) filtered = filtered.filter(p => p.tags.includes(tag))
+    if (status === 'accepted') filtered = filtered.filter(p => p.accepted)
+    if (status === 'attempted') filtered = filtered.filter(p => p.attempted)
+    if (status === 'favorite') filtered = filtered.filter(p => p.favorite)
+    if (status === 'unattempted') filtered = filtered.filter(p => !p.attempted)
     const start = (page - 1) * pageSize
     return wrap({ list: filtered.slice(start, start + pageSize), total: filtered.length })
   },
@@ -170,7 +275,120 @@ export const mockApi = {
     await delay(300)
     const base = PROBLEMS.find(p => p.id === Number(id))
     if (!base) throw new Error('题目不存在')
-    return wrap({ ...base, ...PROBLEM_DETAIL_TEMPLATE })
+    const solutions = SOLUTIONS.filter(item => item.problemId === Number(id) && item.isPublished)
+    const mySolution = SOLUTIONS.find(item => item.problemId === Number(id) && item.userId === USER_PROFILE.id) || {}
+    return wrap({
+      ...base,
+      ...PROBLEM_DETAIL_TEMPLATE,
+      status: base.status || 'published',
+      constraints: base.constraints || 'mock constraints',
+      editorial: base.editorial || 'mock editorial',
+      samples: base.samples || [{ caseNo: 1, input: '1 2', expected: '3', explanation: '' }],
+      testCases: base.testCases || [{ caseNo: 1, input: '1 2', expected: '3', isHidden: false }],
+      favorite: Boolean(base.favorite),
+      solutions,
+      mySolution,
+      templates: base.templates || [
+        { language: 'cpp', code: '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n' },
+        { language: 'python', code: 'print()' },
+        { language: 'go', code: 'package main\n\nfunc main() {\n}\n' }
+      ],
+      versions: base.versions || [{ id: 1, versionNo: 1, title: base.title, difficulty: base.difficulty, createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() }]
+    })
+  },
+
+  async saveProblemSolution(id, data) {
+    await delay(200)
+    const existing = SOLUTIONS.find(item => item.problemId === Number(id) && item.userId === USER_PROFILE.id)
+    if (existing) {
+      Object.assign(existing, data, { updatedAt: new Date().toISOString() })
+      return wrap(existing)
+    }
+    const created = {
+      id: Date.now(),
+      problemId: Number(id),
+      userId: USER_PROFILE.id,
+      username: USER_PROFILE.username,
+      title: data.title,
+      content: data.content,
+      language: data.language,
+      isPublished: data.isPublished,
+      updatedAt: new Date().toISOString()
+    }
+    SOLUTIONS.push(created)
+    return wrap(created)
+  },
+
+  async getMySolutions() {
+    await delay(160)
+    return wrap({ items: SOLUTIONS.filter(item => item.userId === USER_PROFILE.id) })
+  },
+
+  async getMySolutionDetail(id) {
+    await delay(120)
+    const item = SOLUTIONS.find(row => row.id === Number(id) && row.userId === USER_PROFILE.id)
+    if (!item) throw new Error('题解不存在')
+    return wrap(item)
+  },
+
+  async getSolutionDetail(id) {
+    await delay(120)
+    const item = SOLUTIONS.find(row => row.id === Number(id))
+    if (!item) throw new Error('题解不存在')
+    return wrap(item)
+  },
+
+  async favoriteProblem(id) {
+    await delay(120)
+    const problem = PROBLEMS.find(p => p.id === Number(id))
+    if (!problem) throw new Error('题目不存在')
+    problem.favorite = true
+    return wrap({ problemId: Number(id), favorite: true })
+  },
+
+  async unfavoriteProblem(id) {
+    await delay(120)
+    const problem = PROBLEMS.find(p => p.id === Number(id))
+    if (!problem) throw new Error('题目不存在')
+    problem.favorite = false
+    return wrap({ problemId: Number(id), favorite: false })
+  },
+
+  async runProblemCode(id, data) {
+    await delay(800)
+    const problem = PROBLEMS.find(p => p.id === Number(id))
+    if (!problem) throw new Error('题目不存在')
+    const status = data.code?.includes('compile_error') ? 'Compile Error' : 'Accepted'
+    return wrap({
+      traceId: `mock-run-${Date.now()}`,
+      problemId: Number(id),
+      problemTitle: problem.title,
+      source: 'run',
+      status,
+      language: data.language,
+      runtime: 12,
+      runtimeMs: 12,
+      memory: '1.5',
+      memoryKb: 1536,
+      compileOutput: status === 'Compile Error' ? 'mock compile output' : '',
+      errorMessage: '',
+      customInput: data.customInput || '',
+      stdout: status === 'Accepted' ? (data.customInput || 'mock run output') : '',
+      stderr: '',
+      caseResults: [
+        {
+          caseNo: 1,
+          status,
+          runtimeMs: 12,
+          memoryKb: 1536,
+          stdoutBytes: status === 'Accepted' ? (data.customInput || 'mock run output').length : 0,
+          stderrBytes: 0,
+          signal: '',
+          stdoutPreview: status === 'Accepted' ? (data.customInput || 'mock run output') : '',
+          stderrPreview: ''
+        }
+      ]
+    })
   },
 
   async createProblem(data) {
@@ -184,12 +402,19 @@ export const mockApi = {
       acceptRate: '0.0',
       submitCount: 0,
       accepted: false,
+      status: data.status || 'draft',
+      reviewComment: data.reviewComment || '',
       content: data.content,
+      constraints: data.constraints || '',
+      editorial: data.editorial || '',
       timeLimit: data.timeLimit,
       memoryLimit: data.memoryLimit,
       outputLimitKb: data.outputLimitKb,
       source: data.source,
-      testCases: data.testCases || []
+      samples: data.samples || [],
+      testCases: data.testCases || [],
+      templates: data.templates || [],
+      versions: [{ id: Date.now(), versionNo: 1, title: data.title, difficulty: data.difficulty, createdAt: new Date().toISOString(), publishedAt: data.status === 'published' ? new Date().toISOString() : '' }]
     }
     PROBLEMS.unshift(problem)
     return wrap(problem)
@@ -199,8 +424,70 @@ export const mockApi = {
     await delay(300)
     const index = PROBLEMS.findIndex(p => p.id === Number(id))
     if (index < 0) throw new Error('题目不存在')
-    PROBLEMS[index] = { ...PROBLEMS[index], ...data }
+    const current = PROBLEMS[index]
+    const nextVersionNo = (current.versions?.[0]?.versionNo || 0) + 1
+    PROBLEMS[index] = {
+      ...current,
+      ...data,
+      versions: [{ id: Date.now(), versionNo: nextVersionNo, title: data.title || current.title, difficulty: data.difficulty || current.difficulty, createdAt: new Date().toISOString(), publishedAt: current.status === 'published' ? new Date().toISOString() : '' }, ...(current.versions || [])]
+    }
     return wrap(PROBLEMS[index])
+  },
+
+  async getProblemVersions(id) {
+    await delay(180)
+    const problem = PROBLEMS.find(p => p.id === Number(id))
+    if (!problem) throw new Error('题目不存在')
+    return wrap({ problemId: Number(id), items: problem.versions || [] })
+  },
+
+  async publishProblem(id, data) {
+    await delay(220)
+    const index = PROBLEMS.findIndex(p => p.id === Number(id))
+    if (index < 0) throw new Error('题目不存在')
+    PROBLEMS[index] = {
+      ...PROBLEMS[index],
+      status: 'published',
+      reviewComment: data.reviewComment || '',
+      publishedAt: new Date().toISOString()
+    }
+    return wrap(PROBLEMS[index])
+  },
+
+  async rollbackProblem(id, data) {
+    await delay(220)
+    const index = PROBLEMS.findIndex(p => p.id === Number(id))
+    if (index < 0) throw new Error('题目不存在')
+    const version = (PROBLEMS[index].versions || []).find(v => v.id === data.versionId)
+    if (!version) throw new Error('目标版本不存在')
+    PROBLEMS[index] = {
+      ...PROBLEMS[index],
+      title: version.title,
+      difficulty: version.difficulty
+    }
+    return wrap(PROBLEMS[index])
+  },
+
+  async rejudgeProblem(id, data) {
+    await delay(220)
+    return wrap({
+      id: Date.now(),
+      problemId: Number(id),
+      targetVersionId: data.targetVersionId || null,
+      status: 'pending',
+      reason: data.reason || '',
+      totalSubmissions: 0,
+      processedCount: 0,
+      succeededCount: 0,
+      failedCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+  },
+
+  async getRejudgeJobs(id) {
+    await delay(120)
+    return wrap({ problemId: Number(id), items: [] })
   },
 
   async deleteProblem(id) {
@@ -263,6 +550,19 @@ export const mockApi = {
     await delay(200)
     const sub = SUBMISSIONS.find(s => s.id === Number(id))
     return wrap(sub || null)
+  },
+
+  async getSubmissionCases(id) {
+    await delay(120)
+    const sub = SUBMISSIONS.find(s => s.id === Number(id))
+    return wrap({ submissionId: Number(id), items: sub?.caseResults || [] })
+  },
+
+  async getSubmissionOutput(id) {
+    await delay(120)
+    const sub = SUBMISSIONS.find(s => s.id === Number(id))
+    const first = sub?.caseResults?.[0]
+    return wrap({ submissionId: Number(id), stdout: first?.stdoutPreview || '', stderr: first?.stderrPreview || '' })
   },
 
   async aiChat({ message, history, problem_id, conversation_id }) {

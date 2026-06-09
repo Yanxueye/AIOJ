@@ -120,6 +120,33 @@ func TestJudgeMemoryLimitExceeded(t *testing.T) {
 	}
 }
 
+// TestJudgeRunModeSkipsOutputCompare verifies Run Code mode returns Accepted
+// on successful execution even when expected output is intentionally ignored.
+func TestJudgeRunModeSkipsOutputCompare(t *testing.T) {
+	t.Logf(">>> [Mock] run mode skips output compare and only validates execution")
+	svc := NewService(&sandbox.MockSandbox{})
+	result, err := svc.Judge(context.Background(), domain.JudgeRequest{
+		SubmissionID:  5,
+		ProblemID:     1001,
+		Language:      "cpp17",
+		Code:          "dummy",
+		TimeLimitMs:   1000,
+		MemoryLimitMB: 128,
+		OutputLimitKB: 1024,
+		RunMode:       "run",
+		TestCases: []domain.TestCase{
+			{ProblemID: 1001, CaseNo: 1, Input: "wrong\n", Expected: "never checked\n"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Judge() error = %v", err)
+	}
+	t.Logf("    status=%s", result.Status)
+	if result.Status != domain.StatusAccepted {
+		t.Fatalf("unexpected status: %s", result.Status)
+	}
+}
+
 type memoryLimitSandbox struct{}
 
 func (memoryLimitSandbox) Compile(context.Context, sandbox.ExecRequest) (sandbox.ExecResult, error) {

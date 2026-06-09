@@ -27,6 +27,7 @@ type rjJudgeRequest struct {
 	TimeLimitMs   int32        `json:"time_limit_ms"`
 	MemoryLimitMB int32        `json:"memory_limit_mb"`
 	OutputLimitKB int32        `json:"output_limit_kb"`
+	RunMode       string       `json:"run_mode,omitempty"`
 	TestCases     []rjTestCase `json:"test_cases"`
 }
 
@@ -129,11 +130,12 @@ func (r *RemoteJudger) Judge(ctx context.Context, req *JudgeRequest) (*JudgeResp
 		TimeLimitMs:   req.TimeLimitMS,
 		MemoryLimitMB: req.MemoryLimitMB,
 		OutputLimitKB: req.OutputLimitKB,
+		RunMode:       req.RunMode,
 		TestCases:     make([]rjTestCase, len(req.TestCases)),
 	}
 	for i, tc := range req.TestCases {
 		rjReq.TestCases[i] = rjTestCase{
-			CaseNo:   int32(i + 1),
+			CaseNo:   maxCaseNo(tc.CaseNo, int32(i+1)),
 			Input:    tc.Input,
 			Expected: tc.Expected,
 		}
@@ -175,4 +177,11 @@ func (r *RemoteJudger) Judge(ctx context.Context, req *JudgeRequest) (*JudgeResp
 		ErrorMessage: rjResp.ErrorMessage,
 		CaseResults:  caseResults,
 	}, nil
+}
+
+func maxCaseNo(value, fallback int32) int32 {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }

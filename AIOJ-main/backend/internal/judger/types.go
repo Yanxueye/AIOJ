@@ -10,6 +10,7 @@ type JudgerClient interface {
 }
 
 type TestCase struct {
+	CaseNo   int32  `json:"case_no,omitempty"`
 	Input    string `json:"input"`
 	Expected string `json:"expected"`
 }
@@ -23,6 +24,7 @@ type JudgeRequest struct {
 	TimeLimitMS   int32      `json:"time_limit_ms"`
 	MemoryLimitMB int32      `json:"memory_limit_mb"`
 	OutputLimitKB int32      `json:"output_limit_kb"`
+	RunMode       string     `json:"run_mode,omitempty"`
 	TestCases     []TestCase `json:"test_cases"`
 }
 

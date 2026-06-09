@@ -10,6 +10,7 @@ type JudgeRequest struct {
 	TimeLimitMs   int
 	MemoryLimitMB int
 	OutputLimitKB int
+	RunMode       string
 	TestCases     []TestCase
 }
 

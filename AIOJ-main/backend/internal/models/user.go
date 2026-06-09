@@ -2,6 +2,14 @@ package models
 
 import "time"
 
+const (
+	RoleUser          = "user"
+	RoleProblemEditor = "problem_editor"
+	RoleReviewer      = "reviewer"
+	RoleOperator      = "operator"
+	RoleAdmin         = "admin"
+)
+
 type User struct {
 	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Username     string    `gorm:"type:varchar(32);uniqueIndex;not null" json:"username"`
@@ -34,9 +42,28 @@ type Profile struct {
 	SolvedByDifficulty map[string]int `json:"solvedByDifficulty,omitempty"`
 	SolvedByAlgorithm  map[string]int `json:"solvedByAlgorithm,omitempty"`
 	RecentActivity     []DailyCount   `json:"recentActivity,omitempty"`
+	Favorites          []FavoriteDigest `json:"favorites,omitempty"`
+	RecentSubmissions  []SubmissionTimelineItem `json:"recentSubmissions,omitempty"`
 }
 
 type DailyCount struct {
 	Date  string `json:"date"`
 	Count int    `json:"count"`
+}
+
+type FavoriteDigest struct {
+	ProblemID   uint64 `json:"problemId"`
+	Title       string `json:"title"`
+	Difficulty  string `json:"difficulty"`
+	AcceptRate  string `json:"acceptRate"`
+	FavoritedAt string `json:"favoritedAt"`
+}
+
+type SubmissionTimelineItem struct {
+	SubmissionID uint64 `json:"submissionId"`
+	ProblemID    uint64 `json:"problemId"`
+	ProblemTitle string `json:"problemTitle"`
+	Status       string `json:"status"`
+	Language     string `json:"language"`
+	CreatedAt    string `json:"createdAt"`
 }
