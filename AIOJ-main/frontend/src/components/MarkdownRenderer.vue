@@ -1,16 +1,44 @@
 <template>
-  <div class="markdown-body" v-html="rendered"></div>
+  <div ref="container" class="markdown-body" v-html="rendered"></div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps({
   content: { type: String, default: '' }
 })
 
+const container = ref(null)
 const rendered = computed(() => renderMarkdown(props.content))
+
+function attachCopyButtons() {
+  if (!container.value) return
+  const blocks = container.value.querySelectorAll('pre')
+  blocks.forEach(pre => {
+    if (pre.querySelector('.code-copy-btn')) return // already added
+    const btn = document.createElement('button')
+    btn.className = 'code-copy-btn'
+    btn.textContent = '复制'
+    btn.title = '复制代码'
+    btn.onclick = () => {
+      const code = pre.querySelector('code')
+      const text = code ? code.textContent : pre.textContent
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '已复制'
+        setTimeout(() => { btn.textContent = '复制' }, 2000)
+      }).catch(() => {
+        btn.textContent = '失败'
+        setTimeout(() => { btn.textContent = '复制' }, 2000)
+      })
+    }
+    pre.style.position = 'relative'
+    pre.appendChild(btn)
+  })
+}
+
+watch(rendered, () => nextTick(attachCopyButtons))
 </script>
 
 <style>
@@ -96,5 +124,29 @@ const rendered = computed(() => renderMarkdown(props.content))
 .markdown-body .katex-display {
   margin: 16px 0;
   overflow-x: auto;
+}
+.markdown-body pre {
+  position: relative;
+}
+.markdown-body .code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: rgba(255,255,255,0.1);
+  color: var(--text-muted, #666);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.markdown-body pre:hover .code-copy-btn {
+  opacity: 1;
+}
+.markdown-body .code-copy-btn:hover {
+  background: rgba(255,255,255,0.2);
+  color: var(--text-primary, #fff);
 }
 </style>

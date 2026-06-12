@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"math/rand"
 	"time"
 
@@ -29,15 +30,18 @@ func (h *RecommendationHandler) DailyRecommendation(c *gin.Context) {
 	// Get user rating
 	var user models.User
 	if err := h.DB.First(&user, uid).Error; err != nil {
+		log.Printf("[recommendation] user query for uid=%d failed: %v", uid, err)
 		utils.OK(c, gin.H{"items": []gin.H{}})
 		return
 	}
 
 	// Get user's solved problem IDs
 	var solvedIDs []uint64
-	h.DB.Model(&models.Submission{}).
+	if err := h.DB.Model(&models.Submission{}).
 		Where("user_id = ? AND status = ?", uid, models.StatusAccepted).
-		Distinct("problem_id").Pluck("problem_id", &solvedIDs)
+		Distinct("problem_id").Pluck("problem_id", &solvedIDs).Error; err != nil {
+		log.Printf("[recommendation] solved IDs query for uid=%d failed: %v", uid, err)
+	}
 	solvedSet := make(map[uint64]bool)
 	for _, id := range solvedIDs {
 		solvedSet[id] = true
@@ -45,14 +49,20 @@ func (h *RecommendationHandler) DailyRecommendation(c *gin.Context) {
 
 	// Find weak knowledge points (low mastery)
 	var weakKPs []models.UserKnowledgeMastery
-	h.DB.Where("user_id = ? AND mastery_level < 50", uid).
-		Order("mastery_level ASC").Limit(5).Find(&weakKPs)
+	if err := h.DB.Where("user_id = ? AND mastery_level < 50", uid).
+		Order("mastery_level ASC").Limit(5).Find(&weakKPs).Error; err != nil {
+		log.Printf("[recommendation] weak KP query for uid=%d failed: %v", uid, err)
+	}
 
-	// Get problems related to weak knowledge points
+	// Get problems related to weak knowledge points (single query, no N+1)
 	var candidateIDs []uint64
-	for _, kp := range weakKPs {
+	if len(weakKPs) > 0 {
+		kpIDs := make([]uint64, len(weakKPs))
+		for i, kp := range weakKPs {
+			kpIDs[i] = kp.KnowledgePointID
+		}
 		var mappings []models.ProblemKnowledgePoint
-		h.DB.Where("knowledge_point_id = ?", kp.KnowledgePointID).Find(&mappings)
+		h.DB.Where("knowledge_point_id IN ?", kpIDs).Find(&mappings)
 		for _, m := range mappings {
 			if !solvedSet[m.ProblemID] {
 				candidateIDs = append(candidateIDs, m.ProblemID)
@@ -135,13 +145,15 @@ func formatRecommendations(problems []models.Problem, user *models.User) []gin.H
 func (h *RecommendationHandler) LearningPath(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
 	if uid == 0 {
-		c.JSON(401, gin.H{"error": "login required"})
+		utils.Unauthorized(c, "请先登录")
 		return
 	}
 
 	// Get all knowledge points
 	var allKPs []models.KnowledgePoint
-	h.DB.Find(&allKPs)
+	if err := h.DB.Find(&allKPs).Error; err != nil {
+		log.Printf("[recommendation] all KPs query failed: %v", err)
+	}
 	kpMap := make(map[uint64]*models.KnowledgePoint)
 	for i := range allKPs {
 		kpMap[allKPs[i].ID] = &allKPs[i]
@@ -149,7 +161,9 @@ func (h *RecommendationHandler) LearningPath(c *gin.Context) {
 
 	// Get user's mastery
 	var masteries []models.UserKnowledgeMastery
-	h.DB.Where("user_id = ?", uid).Find(&masteries)
+	if err := h.DB.Where("user_id = ?", uid).Find(&masteries).Error; err != nil {
+		log.Printf("[recommendation] mastery query for uid=%d failed: %v", uid, err)
+	}
 	masteryMap := make(map[uint64]float64)
 	for _, m := range masteries {
 		masteryMap[m.KnowledgePointID] = m.MasteryLevel
@@ -234,7 +248,7 @@ func (h *RecommendationHandler) LearningPath(c *gin.Context) {
 func (h *RecommendationHandler) WeaknessAnalysis(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
 	if uid == 0 {
-		c.JSON(401, gin.H{"error": "login required"})
+		utils.Unauthorized(c, "请先登录")
 		return
 	}
 
@@ -243,11 +257,15 @@ func (h *RecommendationHandler) WeaknessAnalysis(c *gin.Context) {
 
 	// Get mastery data
 	var masteries []models.UserKnowledgeMastery
-	h.DB.Where("user_id = ?", uid).Order("mastery_level ASC").Find(&masteries)
+	if err := h.DB.Where("user_id = ?", uid).Order("mastery_level ASC").Find(&masteries).Error; err != nil {
+		log.Printf("[recommendation] weakness mastery query for uid=%d failed: %v", uid, err)
+	}
 
 	// Get all knowledge points
 	var allKPs []models.KnowledgePoint
-	h.DB.Find(&allKPs)
+	if err := h.DB.Find(&allKPs).Error; err != nil {
+		log.Printf("[recommendation] weakness all KPs query failed: %v", err)
+	}
 	kpMap := make(map[uint64]models.KnowledgePoint)
 	for _, kp := range allKPs {
 		kpMap[kp.ID] = kp

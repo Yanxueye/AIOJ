@@ -11,10 +11,11 @@ import (
 
 // OpenAIClient is an OpenAI-compatible API client (works with MIMO, OpenAI, etc.)
 type OpenAIClient struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
+	baseURL        string
+	apiKey         string
+	model          string
+	embeddingModel string
+	httpClient     *http.Client
 }
 
 type openaiChatRequest struct {
@@ -50,11 +51,15 @@ type openaiEmbeddingResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func NewOpenAIClient(baseURL, apiKey, model string) *OpenAIClient {
+func NewOpenAIClient(baseURL, apiKey, model, embeddingModel string) *OpenAIClient {
+	if embeddingModel == "" {
+		embeddingModel = "text-embedding-3-small"
+	}
 	return &OpenAIClient{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		model:   model,
+		baseURL:        baseURL,
+		apiKey:         apiKey,
+		model:          model,
+		embeddingModel: embeddingModel,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -92,7 +97,11 @@ func (c *OpenAIClient) Chat(messages []Message) (string, error) {
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("openai returned %d: %s", resp.StatusCode, string(respBody))
+		body := string(respBody)
+		if len(body) > 200 {
+			body = body[:200] + "...(truncated)"
+		}
+		return "", fmt.Errorf("openai returned %d: %s", resp.StatusCode, body)
 	}
 
 	var chatResp openaiChatResponse
@@ -111,7 +120,7 @@ func (c *OpenAIClient) Chat(messages []Message) (string, error) {
 // Embedding generates an embedding vector
 func (c *OpenAIClient) Embedding(text string) ([]float64, error) {
 	req := openaiEmbeddingRequest{
-		Model: c.model,
+		Model: c.embeddingModel,
 		Input: text,
 	}
 	body, err := json.Marshal(req)
@@ -134,7 +143,12 @@ func (c *OpenAIClient) Embedding(text string) ([]float64, error) {
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openai returned %d: %s", resp.StatusCode, string(respBody))
+		// Truncate body to avoid logging full HTML error pages
+		body := string(respBody)
+		if len(body) > 200 {
+			body = body[:200] + "...(truncated)"
+		}
+		return nil, fmt.Errorf("openai returned %d: %s", resp.StatusCode, body)
 	}
 
 	var embResp openaiEmbeddingResponse

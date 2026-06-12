@@ -35,6 +35,22 @@ func (h *UserHandler) Profile(c *gin.Context) {
 	utils.OK(c, buildProfile(h.DB, &u, true))
 }
 
+// RatingHistory returns the user's rating change history.
+func (h *UserHandler) RatingHistory(c *gin.Context) {
+	uid, _ := middleware.CurrentUserID(c)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	if limit < 1 || limit > 500 {
+		limit = 100
+	}
+
+	var history []models.RatingHistory
+	if err := h.DB.Where("user_id = ?", uid).Order("created_at DESC").Limit(limit).Find(&history).Error; err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+	utils.OK(c, gin.H{"history": history})
+}
+
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
 	var req updateProfileReq
@@ -241,7 +257,7 @@ func buildFavorites(db *gorm.DB, uid uint64) []models.FavoriteDigest {
 
 func buildRecentSubmissions(db *gorm.DB, uid uint64) []models.SubmissionTimelineItem {
 	var rows []models.Submission
-	db.Where("user_id = ? AND source = ?", uid, "submit").Order("id DESC").Limit(12).Find(&rows)
+	db.Where("user_id = ? AND source = ?", uid, "submit").Order("created_at DESC").Limit(12).Find(&rows)
 	out := make([]models.SubmissionTimelineItem, 0, len(rows))
 	for _, item := range rows {
 		out = append(out, models.SubmissionTimelineItem{
@@ -272,7 +288,7 @@ func (h *UserHandler) Heatmap(c *gin.Context) {
 		Count int
 	}
 	var rows []agg
-	h.DB.Raw(`SELECT DATE(created_at) AS day, COUNT(*) AS count
+	h.DB.Raw(`SELECT DATE(CONVERT_TZ(created_at, '+00:00', @@session.time_zone)) AS day, COUNT(*) AS count
 		FROM submissions
 		WHERE user_id = ? AND created_at >= ? AND source = 'submit'
 		GROUP BY day ORDER BY day`,

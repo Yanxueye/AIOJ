@@ -3,7 +3,7 @@ package utils
 import "math"
 
 const (
-	DefaultUserRating    = 1000
+	DefaultUserRating    = 1200
 	DefaultProblemRating = 800
 	MinRating            = 100
 	MaxRating            = 4000

@@ -32,6 +32,8 @@ type SubmissionCaseResult struct {
 	Signal        string    `gorm:"type:varchar(64)" json:"signal,omitempty"`
 	StdoutPreview string    `gorm:"type:text" json:"stdoutPreview,omitempty"`
 	StderrPreview string    `gorm:"type:text" json:"stderrPreview,omitempty"`
+	Input         string    `gorm:"type:longtext" json:"input,omitempty"`
+	Expected      string    `gorm:"type:longtext" json:"expected,omitempty"`
 	CreatedAt     time.Time `json:"-"`
 	UpdatedAt     time.Time `json:"-"`
 }

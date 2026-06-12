@@ -16,11 +16,9 @@ import (
 
 const (
 	ProviderExternal = "external"
-	ProviderMock     = "mock"
 )
 
 type Client struct {
-	enabled  bool
 	endpoint string
 	apiKey   string
 	model    string
@@ -39,8 +37,15 @@ type ProblemContext struct {
 	DifficultyScore int      `json:"difficultyScore"`
 	Tags            []string `json:"tags"`
 	Content         string   `json:"content,omitempty"`
+	Editorial       string   `json:"editorial,omitempty"`
+	Samples         []Sample `json:"samples,omitempty"`
 	TimeLimit       int      `json:"timeLimit"`
 	MemoryLimit     int      `json:"memoryLimit"`
+}
+
+type Sample struct {
+	Input    string `json:"input"`
+	Expected string `json:"expected"`
 }
 
 type SubmissionDigest struct {
@@ -49,6 +54,7 @@ type SubmissionDigest struct {
 	ProblemTitle string `json:"problemTitle"`
 	Language     string `json:"language"`
 	Status       string `json:"status"`
+	Code         string `json:"code,omitempty"`
 	Runtime      int    `json:"runtime"`
 	Memory       string `json:"memory"`
 	CodeLength   int    `json:"codeLength"`
@@ -71,13 +77,16 @@ type ChatResponse struct {
 }
 
 type CodeDiagnosisRequest struct {
-	UserID       uint64          `json:"userId"`
-	Problem      *ProblemContext `json:"problem,omitempty"`
-	SubmissionID uint64          `json:"submissionId,omitempty"`
-	Language     string          `json:"language"`
-	Code         string          `json:"code"`
-	JudgeStatus  string          `json:"judgeStatus,omitempty"`
-	ErrorMessage string          `json:"errorMessage,omitempty"`
+	UserID       uint64              `json:"userId"`
+	Problem      *ProblemContext     `json:"problem,omitempty"`
+	SubmissionID uint64              `json:"submissionId,omitempty"`
+	Language     string              `json:"language"`
+	Code         string              `json:"code"`
+	JudgeStatus  string              `json:"judgeStatus,omitempty"`
+	ErrorMessage string              `json:"errorMessage,omitempty"`
+	RuntimeMs    int                 `json:"runtimeMs,omitempty"`
+	MemoryKb     int                 `json:"memoryKb,omitempty"`
+	RecentSubs   []SubmissionDigest  `json:"recentSubmissions,omitempty"`
 }
 
 type CodeIssue struct {
@@ -100,7 +109,23 @@ type KnowledgeGraphRequest struct {
 	UserID            uint64             `json:"userId"`
 	Scope             string             `json:"scope"`
 	Problem           *ProblemContext    `json:"problem,omitempty"`
-	RecentSubmissions []SubmissionDigest `json:"recentSubmissions"`
+	RecentSubmissions []SubmissionDigest `json:"recentSubmissions,omitempty"`
+	Problems          []ProblemSummary   `json:"problems,omitempty"`
+	TagStats          map[string]TagStat `json:"tagStats,omitempty"`
+}
+
+type ProblemSummary struct {
+	ID         uint64   `json:"id"`
+	Title      string   `json:"title"`
+	Tags       []string `json:"tags"`
+	Status     string   `json:"status"`
+	Attempts   int      `json:"attempts"`
+}
+
+type TagStat struct {
+	Solved    int     `json:"solved"`
+	Attempted int     `json:"attempted"`
+	ACRate    float64 `json:"acRate"`
 }
 
 type GraphNode struct {
@@ -127,17 +152,23 @@ type KnowledgeGraphResponse struct {
 }
 
 type SolveRequest struct {
-	UserID   uint64          `json:"userId"`
-	Problem  *ProblemContext `json:"problem"`
-	Question string          `json:"question,omitempty"`
-	Level    string          `json:"level"`
+	UserID     uint64          `json:"userId"`
+	Problem    *ProblemContext `json:"problem"`
+	Question   string          `json:"question,omitempty"`
+	Level      string          `json:"level"`
+	Language   string          `json:"language,omitempty"`
+	EditorCode string          `json:"editorCode,omitempty"`
+	JudgeError string          `json:"judgeError,omitempty"`
 }
 
 type SolveResponse struct {
-	Answer     string   `json:"answer"`
-	Hints      []string `json:"hints"`
-	Complexity string   `json:"complexity,omitempty"`
-	Provider   string   `json:"provider,omitempty"`
+	Answer      string   `json:"answer"`
+	Hints       []string `json:"hints"`
+	Complexity  string   `json:"complexity,omitempty"`
+	Code        string   `json:"code,omitempty"`
+	Language    string   `json:"language,omitempty"`
+	VerifyResult string  `json:"verifyResult,omitempty"`
+	Provider    string   `json:"provider,omitempty"`
 }
 
 type pipelineEnvelope struct {
@@ -157,7 +188,6 @@ func NewClient(cfg config.AIConfig) *Client {
 	}
 	endpoint := strings.TrimRight(strings.TrimSpace(cfg.Endpoint), "/")
 	return &Client{
-		enabled:  cfg.Enabled && endpoint != "",
 		endpoint: endpoint,
 		apiKey:   strings.TrimSpace(cfg.APIKey),
 		model:    model,
@@ -166,10 +196,6 @@ func NewClient(cfg config.AIConfig) *Client {
 }
 
 func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	if !c.enabled {
-		resp := mockChat(req)
-		return &resp, nil
-	}
 	var resp ChatResponse
 	if err := c.post(ctx, "chat", "/chat", req, &resp); err != nil {
 		return nil, err
@@ -182,10 +208,6 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, erro
 }
 
 func (c *Client) DiagnoseCode(ctx context.Context, req CodeDiagnosisRequest) (*CodeDiagnosisResponse, error) {
-	if !c.enabled {
-		resp := mockCodeDiagnosis(req)
-		return &resp, nil
-	}
 	var resp CodeDiagnosisResponse
 	if err := c.post(ctx, "code_diagnosis", "/code-diagnosis", req, &resp); err != nil {
 		return nil, err
@@ -198,10 +220,6 @@ func (c *Client) DiagnoseCode(ctx context.Context, req CodeDiagnosisRequest) (*C
 }
 
 func (c *Client) BuildKnowledgeGraph(ctx context.Context, req KnowledgeGraphRequest) (*KnowledgeGraphResponse, error) {
-	if !c.enabled {
-		resp := mockKnowledgeGraph(req)
-		return &resp, nil
-	}
 	var resp KnowledgeGraphResponse
 	if err := c.post(ctx, "knowledge_graph", "/knowledge-graph", req, &resp); err != nil {
 		return nil, err
@@ -214,10 +232,6 @@ func (c *Client) BuildKnowledgeGraph(ctx context.Context, req KnowledgeGraphRequ
 }
 
 func (c *Client) Solve(ctx context.Context, req SolveRequest) (*SolveResponse, error) {
-	if !c.enabled {
-		resp := mockSolve(req)
-		return &resp, nil
-	}
 	var resp SolveResponse
 	if err := c.post(ctx, "solve", "/solve", req, &resp); err != nil {
 		return nil, err
@@ -293,53 +307,6 @@ func withProvider(provider *string) {
 	}
 }
 
-func mockChat(req ChatRequest) ChatResponse {
-	ctx := "独立 AI 训练模式"
-	if req.Problem != nil {
-		ctx = fmt.Sprintf("题目 #%d《%s》辅助模式", req.Problem.ID, req.Problem.Title)
-	}
-	lower := strings.ToLower(req.Message)
-	switch {
-	case strings.Contains(lower, "dp") || strings.Contains(req.Message, "动态规划"):
-		return ChatResponse{Provider: ProviderMock, Reply: "### 动态规划思路\n\n动态规划的核心在于：\n\n1. **状态定义**：$dp[i]$ 表示子问题答案。\n2. **转移方程**：从更小规模状态推导当前状态。\n3. **边界条件**：先写出最小规模输入的答案。\n\n```cpp\nfor (int i = 1; i <= n; ++i) {\n    dp[i] = max(dp[i], dp[i - 1]);\n}\n```\n\n当前会话：**" + ctx + "**。"}
-	case strings.Contains(req.Message, "二分"):
-		return ChatResponse{Provider: ProviderMock, Reply: "二分查找需要满足 **单调性**。建议先写一个 `ok(x)` 判断函数，再确定查找第一个满足条件的位置或最后一个满足条件的位置。\n\n" + ctx}
-	case strings.Contains(req.Message, "复杂度"):
-		return ChatResponse{Provider: ProviderMock, Reply: "常见复杂度对照：$O(1) < O(\\log n) < O(n) < O(n \\log n) < O(n^2) < O(2^n)$。\n\n" + ctx}
-	default:
-		return ChatResponse{Provider: ProviderMock, Reply: fmt.Sprintf("你好，我收到了你的问题：\n\n> %s\n\n这是 Mock 回复。接入外部 AI 服务后，将返回基于 **%s** 的完整推理。", req.Message, ctx)}
-	}
-}
-
-func mockCodeDiagnosis(req CodeDiagnosisRequest) CodeDiagnosisResponse {
-	issues := []CodeIssue{}
-	if strings.Contains(req.Code, "TODO") {
-		issues = append(issues, CodeIssue{Severity: "warning", Message: "代码中仍包含 TODO 标记", Hint: "提交前补齐占位逻辑。"})
-	}
-	if strings.Count(req.Code, "{") != strings.Count(req.Code, "}") {
-		issues = append(issues, CodeIssue{Severity: "error", Message: "花括号数量不匹配", Hint: "检查 if/for/function 代码块是否完整闭合。"})
-	}
-	if req.Language == "cpp" && strings.Contains(req.Code, "int main") && !strings.Contains(req.Code, "return 0") {
-		issues = append(issues, CodeIssue{Severity: "info", Message: "main 函数没有显式 return 0", Hint: "虽然 C++ 允许省略，但补充返回值更清晰。"})
-	}
-	if len(issues) == 0 {
-		issues = append(issues, CodeIssue{Severity: "info", Message: "Mock 检查未发现明显语法级问题", Hint: "建议结合样例和边界数据继续验证。"})
-	}
-	suggestions := []string{
-		"先用题目样例做最小闭环测试。",
-		"补充边界输入：空数组、单元素、重复元素、极值。",
-		"根据题目约束重新核对时间复杂度。",
-	}
-	resp := CodeDiagnosisResponse{
-		Summary:     "已完成代码诊断，以下结果来自 TerminalOJ AI Mock 管线。",
-		Issues:      issues,
-		Suggestions: suggestions,
-		Provider:    ProviderMock,
-	}
-	resp.RawMarkdown = diagnosisMarkdown(resp)
-	return resp
-}
-
 func diagnosisMarkdown(resp CodeDiagnosisResponse) string {
 	var b strings.Builder
 	if resp.Summary != "" {
@@ -376,49 +343,6 @@ func diagnosisMarkdown(resp CodeDiagnosisResponse) string {
 	return strings.TrimSpace(b.String())
 }
 
-func mockKnowledgeGraph(req KnowledgeGraphRequest) KnowledgeGraphResponse {
-	nodes := []GraphNode{{ID: "user", Label: "当前用户", Type: "user", Weight: 1}}
-	edges := []GraphEdge{}
-	seen := map[string]bool{"user": true}
-	addNode := func(node GraphNode) {
-		if seen[node.ID] {
-			return
-		}
-		seen[node.ID] = true
-		nodes = append(nodes, node)
-	}
-	if req.Problem != nil {
-		pid := fmt.Sprintf("problem:%d", req.Problem.ID)
-		addNode(GraphNode{ID: pid, Label: req.Problem.Title, Type: "problem", Weight: 1})
-		edges = append(edges, GraphEdge{Source: "user", Target: pid, Type: "practicing", Weight: 1})
-		for _, tag := range req.Problem.Tags {
-			tid := "tag:" + tag
-			addNode(GraphNode{ID: tid, Label: tag, Type: "algorithm", Weight: 1})
-			edges = append(edges, GraphEdge{Source: pid, Target: tid, Type: "requires", Weight: 1})
-		}
-	}
-	statusWeight := map[string]int{}
-	for _, sub := range req.RecentSubmissions {
-		pid := fmt.Sprintf("problem:%d", sub.ProblemID)
-		addNode(GraphNode{ID: pid, Label: sub.ProblemTitle, Type: "problem", Weight: 1})
-		edges = append(edges, GraphEdge{Source: "user", Target: pid, Type: sub.Status, Weight: 1})
-		statusWeight[sub.Status]++
-	}
-	for status, weight := range statusWeight {
-		sid := "status:" + status
-		addNode(GraphNode{ID: sid, Label: status, Type: "status", Weight: weight})
-		edges = append(edges, GraphEdge{Source: "user", Target: sid, Type: "has_result", Weight: weight})
-	}
-	resp := KnowledgeGraphResponse{
-		Summary:  fmt.Sprintf("已根据 %d 条最近提交生成学习知识图谱。", len(req.RecentSubmissions)),
-		Nodes:    nodes,
-		Edges:    edges,
-		Provider: ProviderMock,
-	}
-	resp.RawMarkdown = graphMarkdown(resp)
-	return resp
-}
-
 func graphMarkdown(resp KnowledgeGraphResponse) string {
 	var b strings.Builder
 	b.WriteString("### 学习知识图谱\n\n")
@@ -438,29 +362,4 @@ func graphMarkdown(resp KnowledgeGraphResponse) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
-}
-
-func mockSolve(req SolveRequest) SolveResponse {
-	problemTitle := "当前题目"
-	if req.Problem != nil {
-		problemTitle = fmt.Sprintf("#%d《%s》", req.Problem.ID, req.Problem.Title)
-	}
-	level := req.Level
-	if level == "" {
-		level = "hint"
-	}
-	answer := fmt.Sprintf("### %s 解题辅助\n\n当前返回级别：`%s`。建议按以下步骤推进：\n\n1. 先明确输入规模和目标复杂度。\n2. 根据标签或样例推断核心算法。\n3. 写出状态 / 数据结构定义，再写转移或遍历逻辑。\n4. 用样例和边界数据验证。", problemTitle, level)
-	if req.Question != "" {
-		answer += "\n\n你的问题：\n\n> " + req.Question
-	}
-	return SolveResponse{
-		Answer: answer,
-		Hints: []string{
-			"从暴力解开始，确认正确性后再优化。",
-			"把样例手算一遍，观察重复子问题或单调性。",
-			"提交前检查边界条件和数据范围。",
-		},
-		Complexity: "Mock 模式无法精确判断，建议目标复杂度控制在题目约束可接受范围内。",
-		Provider:   ProviderMock,
-	}
 }

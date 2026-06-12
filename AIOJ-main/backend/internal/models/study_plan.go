@@ -30,8 +30,8 @@ func (StudyPlanItem) TableName() string { return "study_plan_items" }
 
 type UserPlanProgress struct {
 	ID               uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID           uint64    `gorm:"index;not null" json:"userId"`
-	PlanID           uint64    `gorm:"index;not null" json:"planId"`
+	UserID           uint64    `gorm:"uniqueIndex:idx_user_plan;not null" json:"userId"`
+	PlanID           uint64    `gorm:"uniqueIndex:idx_user_plan;not null" json:"planId"`
 	CompletedCount   int       `json:"completedCount"`
 	LastCompletedAt  *time.Time `json:"lastCompletedAt,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
@@ -58,7 +58,7 @@ type DailyChallenge struct {
 	ProblemID  uint64    `gorm:"index;not null" json:"problemId"`
 	Title      string    `gorm:"type:varchar(128)" json:"title"`
 	Difficulty string    `gorm:"type:varchar(16)" json:"difficulty"`
-	Date       string    `gorm:"type:varchar(16);uniqueIndex" json:"date"`
+	Date       string    `gorm:"type:date;uniqueIndex" json:"date"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
@@ -67,8 +67,8 @@ func (DailyChallenge) TableName() string { return "daily_challenges" }
 
 type StudyCheckin struct {
 	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID    uint64    `gorm:"index;not null" json:"userId"`
-	Date      string    `gorm:"type:varchar(16);index" json:"date"`
+	UserID    uint64    `gorm:"uniqueIndex:idx_user_date;not null" json:"userId"`
+	Date      string    `gorm:"type:date;uniqueIndex:idx_user_date" json:"date"`
 	Count     int       `json:"count"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

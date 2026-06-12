@@ -11,10 +11,19 @@ import (
 
 // Seed ensures the database has a minimum set of demo data.
 func Seed(conn *gorm.DB) error {
+	if err := seedKnowledge(conn); err != nil {
+		return err
+	}
+	if err := syncTagsFromKnowledgePoints(conn); err != nil {
+		return err
+	}
 	if err := seedUsers(conn); err != nil {
 		return err
 	}
 	if err := seedProblems(conn); err != nil {
+		return err
+	}
+	if err := seedAdditionalProblems(conn); err != nil {
 		return err
 	}
 	if err := seedStudyPlans(conn); err != nil {
@@ -26,11 +35,59 @@ func Seed(conn *gorm.DB) error {
 	if err := seedAnnouncements(conn); err != nil {
 		return err
 	}
-	if err := seedKnowledge(conn); err != nil {
-		return err
-	}
 	if err := seedProblemKnowledgeMappings(conn); err != nil {
 		return err
+	}
+	if err := seedRatingHistory(conn); err != nil {
+		return err
+	}
+	if err := seedSubmissions(conn); err != nil {
+		return err
+	}
+	return nil
+}
+
+// syncTagsFromKnowledgePoints ensures AlgorithmTag entries exist for all KnowledgePoint names.
+// KnowledgePoint is the master (has rich metadata: descriptions, colors, icons, URLs).
+// AlgorithmTag mirrors its names for use in problem creation and AI alignment.
+func syncTagsFromKnowledgePoints(conn *gorm.DB) error {
+	var kps []models.KnowledgePoint
+	conn.Find(&kps)
+
+	existingTags := make(map[string]bool)
+	var tags []models.AlgorithmTag
+	conn.Find(&tags)
+	for _, t := range tags {
+		existingTags[t.Name] = true
+	}
+
+	created := 0
+	for _, kp := range kps {
+		if existingTags[kp.Name] {
+			continue
+		}
+		tag := models.AlgorithmTag{
+			Name:     kp.Name,
+			Category: kp.Category,
+			Parent:   "",
+			OrderNo:  0,
+		}
+		// Find parent name
+		if kp.ParentID != nil {
+			var parent models.KnowledgePoint
+			if err := conn.First(&parent, *kp.ParentID).Error; err == nil {
+				tag.Parent = parent.Name
+			}
+		}
+		if err := conn.Create(&tag).Error; err != nil {
+			log.Printf("[seed] warn: failed to create tag for KP %s: %v", kp.Name, err)
+			continue
+		}
+		created++
+	}
+
+	if created > 0 {
+		log.Printf("[seed] synced %d algorithm tags from knowledge points", created)
 	}
 	return nil
 }
@@ -47,7 +104,7 @@ func seedUsers(conn *gorm.DB) error {
 		PasswordHash: hash,
 		Role:         "user",
 		Bio:          "热爱算法的开发者",
-		Rating:       1520,
+		Rating:       1320,
 	}
 	admin := models.User{
 		Username:     "admin",
@@ -55,7 +112,7 @@ func seedUsers(conn *gorm.DB) error {
 		PasswordHash: hash,
 		Role:         "admin",
 		Bio:          "题库与系统管理员",
-		Rating:       1800,
+		Rating:       1600,
 	}
 
 	if err := ensureSeedUser(conn, coder); err != nil {
@@ -78,7 +135,10 @@ func ensureSeedUser(conn *gorm.DB, seed models.User) error {
 		if user.Bio == "" || user.Username == "admin" || user.Username == "coder_test" {
 			user.Bio = seed.Bio
 		}
-		if user.Rating == 0 {
+		// Always sync seed user ratings
+		if user.Username == "coder_test" || user.Username == "admin" {
+			user.Rating = seed.Rating
+		} else if user.Rating == 0 {
 			user.Rating = seed.Rating
 		}
 		return conn.Save(&user).Error
@@ -94,6 +154,7 @@ type seededProblem struct {
 	Title           string
 	Difficulty      string
 	DifficultyScore int
+	Rating          int
 	Tags            models.StringSlice
 	Source          string
 	TimeLimit       int
@@ -122,6 +183,7 @@ func seedProblems(conn *gorm.DB) error {
 			Title:           "两数之和",
 			Difficulty:      "简单",
 			DifficultyScore: 800,
+			Rating:          800,
 			Tags:            models.StringSlice{"数组", "哈希表"},
 			Source:          "TerminalOJ 原创",
 			TimeLimit:       1000,
@@ -146,6 +208,7 @@ func seedProblems(conn *gorm.DB) error {
 			Title:           "最长回文子串",
 			Difficulty:      "中等",
 			DifficultyScore: 1300,
+			Rating:          1300,
 			Tags:            models.StringSlice{"字符串", "动态规划"},
 			Source:          "TerminalOJ 原创",
 			TimeLimit:       1500,
@@ -170,6 +233,7 @@ func seedProblems(conn *gorm.DB) error {
 			Title:           "合并 K 个升序链表",
 			Difficulty:      "困难",
 			DifficultyScore: 1900,
+			Rating:          1900,
 			Tags:            models.StringSlice{"堆", "链表", "分治"},
 			Source:          "TerminalOJ 原创",
 			TimeLimit:       2000,
@@ -194,6 +258,7 @@ func seedProblems(conn *gorm.DB) error {
 			Title:           "零钱兑换",
 			Difficulty:      "中等",
 			DifficultyScore: 1400,
+			Rating:          1400,
 			Tags:            models.StringSlice{"动态规划", "贪心"},
 			Source:          "TerminalOJ 原创",
 			TimeLimit:       1000,
@@ -218,6 +283,7 @@ func seedProblems(conn *gorm.DB) error {
 			Title:           "岛屿数量",
 			Difficulty:      "中等",
 			DifficultyScore: 1200,
+			Rating:          1200,
 			Tags:            models.StringSlice{"搜索", "图论", "并查集"},
 			Source:          "TerminalOJ 原创",
 			TimeLimit:       1200,
@@ -313,6 +379,98 @@ func seedProblems(conn *gorm.DB) error {
 	return nil
 }
 
+func seedAdditionalProblems(conn *gorm.DB) error {
+	var count int64
+	conn.Model(&models.Problem{}).Count(&count)
+	if count >= 50 {
+		return nil // Already have enough problems
+	}
+
+	now := time.Now().UTC()
+	adminID := seededAdminID(conn)
+	problems := additionalProblems()
+
+	for _, item := range problems {
+		// Skip if problem already exists
+		var existing models.Problem
+		if err := conn.Where("id = ?", item.ID).First(&existing).Error; err == nil {
+			continue
+		}
+
+		version := models.ProblemVersion{
+			ProblemID:       item.ID,
+			VersionNo:       1,
+			Title:           item.Title,
+			Difficulty:      item.Difficulty,
+			DifficultyScore: item.DifficultyScore,
+			Tags:            item.Tags,
+			Content:         item.Content,
+			Constraints:     item.Constraints,
+			Source:          item.Source,
+			TimeLimit:       item.TimeLimit,
+			MemoryLimit:     item.MemoryLimit,
+			OutputLimitKB:   item.OutputLimitKB,
+			Editorial:       item.Editorial,
+			CreatedBy:       uint64Ptr(adminID),
+			PublishedAt:     &now,
+		}
+		if err := conn.Create(&version).Error; err != nil {
+			return err
+		}
+
+		for i := range item.Samples {
+			item.Samples[i].VersionID = version.ID
+		}
+		for i := range item.TestCases {
+			item.TestCases[i].VersionID = version.ID
+		}
+		for i := range item.Templates {
+			item.Templates[i].VersionID = version.ID
+		}
+
+		problem := models.Problem{
+			ID:                 item.ID,
+			Title:              item.Title,
+			Difficulty:         item.Difficulty,
+			DifficultyScore:    item.DifficultyScore,
+			Rating:             item.Rating,
+			Tags:               item.Tags,
+			Source:             item.Source,
+			Status:             models.ProblemStatusPublished,
+			CurrentVersionID:   &version.ID,
+			PublishedVersionID: &version.ID,
+			PublishedAt:        &now,
+			PublishedBy:        uint64Ptr(adminID),
+			LastEditedBy:       uint64Ptr(adminID),
+		}
+		if err := conn.Create(&problem).Error; err != nil {
+			return err
+		}
+		if len(item.Samples) > 0 {
+			if err := conn.Create(&item.Samples).Error; err != nil {
+				return err
+			}
+		}
+		if len(item.TestCases) > 0 {
+			if err := conn.Create(&item.TestCases).Error; err != nil {
+				return err
+			}
+		}
+		if len(item.Templates) > 0 {
+			if err := conn.Create(&item.Templates).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	log.Printf("[seed] %d additional problems inserted", len(problems))
+
+	// Update auto-increment counter
+	conn.Exec("ALTER TABLE problems AUTO_INCREMENT = 2000")
+
+	return nil
+}
+
 func seededAdminID(conn *gorm.DB) uint64 {
 	var admin models.User
 	if err := conn.Where("username = ?", "admin").First(&admin).Error; err == nil {
@@ -329,20 +487,7 @@ func uint64Ptr(v uint64) *uint64 {
 }
 
 func defaultTemplates() []models.ProblemTemplate {
-	return []models.ProblemTemplate{
-		{
-			Language: "cpp",
-			Code:     "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n",
-		},
-		{
-			Language: "python",
-			Code:     "import sys\ninput = sys.stdin.readline\n\ndef solve():\n    pass\n\nsolve()\n",
-		},
-		{
-			Language: "go",
-			Code:     "package main\n\nfunc main() {\n}\n",
-		},
-	}
+	return models.DefaultTemplates()
 }
 
 func seedAnnouncements(conn *gorm.DB) error {
@@ -425,10 +570,10 @@ func seedProblemKnowledgeMappings(conn *gorm.DB) error {
 	mappings := []models.ProblemKnowledgePoint{
 		// 1001 两数之和 - 数组, 哈希表
 		{ProblemID: 1001, KnowledgePointID: getKPID(conn, "哈希表")},
-		{ProblemID: 1001, KnowledgePointID: getKPID(conn, "二分查找")},
+		{ProblemID: 1001, KnowledgePointID: getKPID(conn, "二分")},
 		// 1002 最长回文子串 - 字符串, 动态规划
 		{ProblemID: 1002, KnowledgePointID: getKPID(conn, "动态规划")},
-		{ProblemID: 1002, KnowledgePointID: getKPID(conn, "字符串哈希")},
+		{ProblemID: 1002, KnowledgePointID: getKPID(conn, "哈希")},
 		// 1003 合并K个升序链表 - 堆, 链表, 分治
 		{ProblemID: 1003, KnowledgePointID: getKPID(conn, "堆")},
 		{ProblemID: 1003, KnowledgePointID: getKPID(conn, "分治")},
@@ -447,6 +592,116 @@ func seedProblemKnowledgeMappings(conn *gorm.DB) error {
 		}
 	}
 	log.Println("[seed] problem-knowledge mappings seeded")
+	return nil
+}
+
+func seedRatingHistory(conn *gorm.DB) error {
+	var count int64
+	conn.Model(&models.RatingHistory{}).Where("reason = ?", "AC").Count(&count)
+	if count > 0 {
+		return nil
+	}
+
+	// Get user IDs
+	var coder, admin models.User
+	conn.Where("username = ?", "coder_test").First(&coder)
+	conn.Where("username = ?", "admin").First(&admin)
+
+	if coder.ID == 0 || admin.ID == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	history := []models.RatingHistory{
+		// coder_test: 1000 → 1120 → 1250 → 1320
+		{UserID: coder.ID, OldRating: 1000, NewRating: 1120, Delta: 120, ProblemID: 1001, Reason: "AC", CreatedAt: now.Add(-30 * 24 * time.Hour)},
+		{UserID: coder.ID, OldRating: 1120, NewRating: 1250, Delta: 130, ProblemID: 1002, Reason: "AC", CreatedAt: now.Add(-20 * 24 * time.Hour)},
+		{UserID: coder.ID, OldRating: 1250, NewRating: 1320, Delta: 70, ProblemID: 1004, Reason: "AC", CreatedAt: now.Add(-10 * 24 * time.Hour)},
+		// admin: 1000 → 1200 → 1400 → 1600
+		{UserID: admin.ID, OldRating: 1000, NewRating: 1200, Delta: 200, ProblemID: 1001, Reason: "AC", CreatedAt: now.Add(-45 * 24 * time.Hour)},
+		{UserID: admin.ID, OldRating: 1200, NewRating: 1400, Delta: 200, ProblemID: 1003, Reason: "AC", CreatedAt: now.Add(-30 * 24 * time.Hour)},
+		{UserID: admin.ID, OldRating: 1400, NewRating: 1600, Delta: 200, ProblemID: 1005, Reason: "AC", CreatedAt: now.Add(-15 * 24 * time.Hour)},
+	}
+
+	if err := conn.Create(&history).Error; err != nil {
+		return err
+	}
+	log.Println("[seed] rating history seeded")
+	return nil
+}
+
+func seedSubmissions(conn *gorm.DB) error {
+	var count int64
+	conn.Model(&models.Submission{}).Where("trace_id LIKE ?", "seed-%").Count(&count)
+	if count > 0 {
+		return nil
+	}
+
+	var coder, admin models.User
+	conn.Where("username = ?", "coder_test").First(&coder)
+	conn.Where("username = ?", "admin").First(&admin)
+	if coder.ID == 0 || admin.ID == 0 {
+		return nil
+	}
+
+	now := time.Now()
+
+	type seedSub struct {
+		ProblemID    uint64
+		ProblemTitle string
+		UserID       uint64
+		TraceID      string
+		Status       string
+		Runtime      int
+		Memory       string
+		ErrorMessage string
+		CreatedAt    time.Time
+		Code         string
+	}
+
+	seeds := []seedSub{
+		// coder_test submissions
+		{UserID: coder.ID, ProblemID: 1001, ProblemTitle: "两数之和", TraceID: "seed-wa-1", Status: "Wrong Answer", Runtime: 0, Memory: "0", ErrorMessage: "期望输出 0 1，实际输出 1 2", CreatedAt: now.Add(-32 * 24 * time.Hour), Code: "#include<bits/stdc++.h>\nint main(){int n,t;std::cin>>n>>t;std::vector<int>a(n);for(auto&x:a)std::cin>>x;for(int i=0;i<n;i++)for(int j=i+1;j<n;j++)if(a[i]+a[j]==t){std::cout<<i<<\" \"<<j;return 0;}}"},
+		{UserID: coder.ID, ProblemID: 1001, ProblemTitle: "两数之和", TraceID: "seed-ac-1", Status: "Accepted", Runtime: 12, Memory: "15.2", CreatedAt: now.Add(-30 * 24 * time.Hour), Code: "#include<bits/stdc++.h>\nint main(){int n,t;std::cin>>n>>t;std::unordered_map<int,int>m;for(int i=0,x;i<n;i++){std::cin>>x;if(m.count(t-x)){std::cout<<m[t-x]<<\" \"<<i;return 0;}m[x]=i;}}"},
+		{UserID: coder.ID, ProblemID: 1002, ProblemTitle: "最长回文子串", TraceID: "seed-ac-2", Status: "Accepted", Runtime: 28, Memory: "12.8", CreatedAt: now.Add(-20 * 24 * time.Hour), Code: "#include<bits/stdc++.h>\nstd::string longest(std::string s){int n=s.size(),start=0,maxlen=1;std::vector<std::vector<bool>>dp(n,std::vector<bool>(n));for(int i=0;i<n;i++)dp[i][i]=true;for(int len=2;len<=n;len++)for(int i=0;i+len<=n;i++){int j=i+len-1;if(s[i]==s[j]&&(len==2||dp[i+1][j-1])){dp[i][j]=true;if(len>maxlen){maxlen=len;start=i;}}}return s.substr(start,maxlen);}\nint main(){std::string s;std::cin>>s;std::cout<<longest(s);}"},
+		{UserID: coder.ID, ProblemID: 1004, ProblemTitle: "零钱兑换", TraceID: "seed-ac-3", Status: "Accepted", Runtime: 8, Memory: "8.4", CreatedAt: now.Add(-10 * 24 * time.Hour), Code: "#include<bits/stdc++.h>\nint main(){int n,amount;std::cin>>n>>amount;std::vector<int>coins(n);for(auto&c:coins)std::cin>>c;std::vector<int>dp(amount+1,1e9);dp[0]=0;for(int i=1;i<=amount;i++)for(int c:coins)if(i>=c)dp[i]=std::min(dp[i],dp[i-c]+1);std::cout<<(dp[amount]>=1e9?-1:dp[amount]);}"},
+		// admin submissions
+		{UserID: admin.ID, ProblemID: 1001, ProblemTitle: "两数之和", TraceID: "seed-ac-4", Status: "Accepted", Runtime: 10, Memory: "14.8", CreatedAt: now.Add(-45 * 24 * time.Hour), Code: "#include<bits/stdc++.h>\nint main(){int n,t;std::cin>>n>>t;std::unordered_map<int,int>m;for(int i=0,x;i<n;i++){std::cin>>x;if(m.count(t-x)){std::cout<<m[t-x]<<\" \"<<i;return 0;}m[x]=i;}}"},
+		{UserID: admin.ID, ProblemID: 1003, ProblemTitle: "合并 K 个升序链表", TraceID: "seed-ac-5", Status: "Accepted", Runtime: 45, Memory: "32.1", CreatedAt: now.Add(-30 * 24 * time.Hour), Code: "// merge k sorted lists using priority queue"},
+		{UserID: admin.ID, ProblemID: 1005, ProblemTitle: "岛屿数量", TraceID: "seed-ac-6", Status: "Accepted", Runtime: 20, Memory: "18.5", CreatedAt: now.Add(-15 * 24 * time.Hour), Code: "// island count using DFS"},
+	}
+
+	subs := make([]models.Submission, 0, len(seeds))
+	for _, s := range seeds {
+		fin := s.CreatedAt.Add(time.Duration(100+s.Runtime) * time.Millisecond)
+		subs = append(subs, models.Submission{
+			UserID:         s.UserID,
+			ProblemID:      s.ProblemID,
+			ProblemTitle:   s.ProblemTitle,
+			TraceID:        s.TraceID,
+			Source:         "submit",
+			Language:       "cpp",
+			Code:           s.Code,
+			CodeLength:     len(s.Code),
+			Status:         s.Status,
+			Runtime:        s.Runtime,
+			RuntimeMS:      s.Runtime,
+			Memory:         s.Memory,
+			QueueStartedAt: &s.CreatedAt,
+			FinishedAt:     &fin,
+			CreatedAt:      s.CreatedAt,
+			UpdatedAt:      s.CreatedAt,
+		})
+	}
+
+	if err := conn.Create(&subs).Error; err != nil {
+		return err
+	}
+
+	// Set auto-increment to start at 200000, well above the sequence range (100000+)
+	// to prevent any collision between auto-increment and nextSubmissionID()
+	conn.Exec("ALTER TABLE submissions AUTO_INCREMENT = 200000")
+	log.Printf("[seed] %d seed submissions created", len(subs))
 	return nil
 }
 

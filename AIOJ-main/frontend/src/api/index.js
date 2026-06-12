@@ -1,8 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-const USE_MOCK = false
-
 const http = axios.create({
   baseURL: '/api',
   timeout: 15000,
@@ -32,5 +30,4 @@ http.interceptors.response.use(
   }
 )
 
-export { USE_MOCK }
 export default http

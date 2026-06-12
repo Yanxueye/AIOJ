@@ -90,7 +90,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		utils.Server(c, err.Error())
 		return
 	}
-	user := models.User{Username: req.Username, Email: req.Email, PasswordHash: hash, Role: "user", Rating: 1200}
+	user := models.User{Username: req.Username, Email: req.Email, PasswordHash: hash, Role: "user", Rating: 1000}
 	if err := h.DB.Create(&user).Error; err != nil {
 		utils.Server(c, err.Error())
 		return

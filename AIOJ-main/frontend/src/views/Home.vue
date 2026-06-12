@@ -14,10 +14,10 @@
           AI 驱动的算法训练平台
         </div>
         <h1 class="hero-title">
-          刷题，<span class="hero-highlight">不止于</span><br/>刷题
+          代码即诗意，<span class="hero-highlight">算法即远方</span>
         </h1>
         <p class="hero-desc">
-          在线算法评测 · AI 智能辅助 · 知识图谱导航 · 个性化学习路径
+          在线评测 · AI 智能辅助 · 知识图谱 · 个性化路径
         </p>
         <div class="hero-actions">
           <el-button type="primary" size="large" round class="hero-btn-primary" @click="$router.push('/problems')">
@@ -29,7 +29,7 @@
         </div>
         <div class="hero-stats">
           <div class="stat-pill">
-            <span class="stat-num">50+</span>
+            <span class="stat-num">{{ problemCount }}</span>
             <span class="stat-label">精选题目</span>
           </div>
           <div class="stat-divider" />
@@ -39,7 +39,7 @@
           </div>
           <div class="stat-divider" />
           <div class="stat-pill">
-            <span class="stat-num">4</span>
+            <span class="stat-num">3</span>
             <span class="stat-label">编程语言</span>
           </div>
         </div>
@@ -208,6 +208,7 @@ const hotProblems = ref([])
 const dailyChallenge = ref(null)
 const checkins = ref([])
 const recommendations = ref([])
+const problemCount = ref(5)
 
 onMounted(async () => {
   const [problemRes, dailyRes, checkinRes, recRes] = await Promise.all([
@@ -217,6 +218,7 @@ onMounted(async () => {
     http.get('/recommendations/daily').catch(() => ({ data: { items: [] } }))
   ])
   hotProblems.value = problemRes.data.list
+  problemCount.value = problemRes.data.total || problemRes.data.list?.length || 5
   dailyChallenge.value = dailyRes.data
   checkins.value = checkinRes.data.items || []
   recommendations.value = recRes.data?.items || []
@@ -229,74 +231,56 @@ function diffTagType(d) {
 
 <style scoped>
 .hero-section {
-  background: var(--gradient-hero);
-  border-radius: var(--radius-xl);
-  padding: 52px 48px;
+  background: linear-gradient(135deg, #2d6a1e 0%, #3d8c28 40%, #4a9d32 70%, #5cb840 100%);
+  border-radius: 20px;
+  padding: 48px 48px;
   margin-bottom: 28px;
   color: #fff;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(45, 106, 30, 0.25), inset 0 1px 0 rgba(255,255,255,0.1);
+  box-shadow: 0 8px 32px rgba(45, 106, 30, 0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+/* Subtle pattern overlay */
+.hero-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.12) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(255,255,255,0.06) 0%, transparent 40%),
+    radial-gradient(circle at 60% 40%, rgba(232,168,56,0.06) 0%, transparent 30%);
+  pointer-events: none;
+}
+
+/* Code-like decorative pattern */
+.hero-section::after {
+  content: '{ }';
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 120px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.06);
+  font-family: 'JetBrains Mono', monospace;
+  pointer-events: none;
 }
 
 .hero-bg-pattern {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.15) 0%, transparent 50%),
-    radial-gradient(circle at 20% 80%, rgba(255,255,255,0.08) 0%, transparent 40%),
-    radial-gradient(circle at 60% 40%, rgba(232,168,56,0.08) 0%, transparent 30%);
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
   pointer-events: none;
-}
-
-/* Glass reflection on hero */
-.hero-section::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 100%);
-  pointer-events: none;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-}
-
-.hero-glass-orb {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.08);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.12);
-  pointer-events: none;
-  animation: float 8s ease-in-out infinite;
-}
-
-.hero-orb-1 {
-  width: 180px;
-  height: 180px;
-  top: -40px;
-  right: 60px;
-  animation-delay: 0s;
-}
-
-.hero-orb-2 {
-  width: 100px;
-  height: 100px;
-  bottom: 20px;
-  right: 200px;
-  animation-delay: -3s;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
 }
 
 .hero-content {
   position: relative;
   z-index: 1;
+  max-width: 600px;
 }
 
 .hero-badge {
@@ -304,30 +288,32 @@ function diffTagType(d) {
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  background: rgba(255,255,255,0.18);
-  border-radius: var(--radius-full);
-  font-size: 12.5px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 20px;
+  font-size: 12px;
   font-weight: 600;
   margin-bottom: 20px;
   backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.2);
 }
 
 .hero-title {
-  font-family: var(--font-display);
-  font-size: 44px;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 40px;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.2;
   margin-bottom: 16px;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 
 .hero-highlight {
   color: #ffd666;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .hero-desc {
   font-size: 15px;
-  opacity: 0.88;
+  opacity: 0.9;
   margin-bottom: 28px;
   line-height: 1.7;
   max-width: 480px;
@@ -419,37 +405,40 @@ function diffTagType(d) {
 .entry-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: 12px;
 }
 
 .entry-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 20px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
+  gap: 8px;
+  padding: 18px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.06);
   cursor: pointer;
-  transition: all var(--transition-fast);
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.2s ease;
+  background: #fff;
 }
 
 .entry-card:hover {
-  border-color: var(--glass-border-strong);
-  box-shadow: var(--shadow-glass);
+  border-color: var(--accent-primary);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
   transform: translateY(-2px);
 }
 
 .entry-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-md);
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.entry-label {
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .entry-label {

@@ -32,17 +32,12 @@
         v-loading="submissionStore.loading"
         stripe
         style="width: 100%"
-        @expand-change="handleExpandChange"
       >
-        <el-table-column type="expand" width="40">
+        <el-table-column label="提交编号" width="110">
           <template #default="{ row }">
-            <div class="code-expand" v-loading="loadingCode[row.id]">
-              <pre v-if="submissionCodes[row.id]" class="code-block"><code>{{ submissionCodes[row.id] }}</code></pre>
-              <el-empty v-else-if="!loadingCode[row.id]" description="暂无代码" :image-size="40" />
-            </div>
+            <span class="sub-id-link" @click="openCodeDialog(row)">{{ row.id }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="id" label="提交编号" width="110" />
         <el-table-column label="题号" width="80">
           <template #default="{ row }">
             <router-link :to="`/problem/${row.problemId}`" class="link">
@@ -95,6 +90,44 @@
         />
       </div>
     </div>
+
+    <!-- Code Dialog -->
+    <el-dialog
+      v-model="codeDialogVisible"
+      :title="`提交 #${codeDialogData.id} — ${codeDialogData.problemTitle}`"
+      width="800px"
+      top="5vh"
+      destroy-on-close
+    >
+      <div class="code-dialog-content">
+        <div class="code-dialog-meta">
+          <span :class="statusClass(codeDialogData.status)">{{ codeDialogData.status }}</span>
+          <span class="meta-sep">·</span>
+          <span>{{ codeDialogData.language }}</span>
+          <span class="meta-sep">·</span>
+          <span>{{ codeDialogData.runtimeMs != null ? codeDialogData.runtimeMs + 'ms' : '-' }}</span>
+          <span class="meta-sep">·</span>
+          <span>{{ codeDialogData.memoryKb != null ? codeDialogData.memoryKb + ' KB' : '-' }}</span>
+          <span class="meta-sep">·</span>
+          <span>{{ formatTime(codeDialogData.createdAt) }}</span>
+        </div>
+        <div v-if="codeDialogData.errorMessage" class="code-dialog-error">
+          <div class="error-label">错误信息</div>
+          <pre class="error-pre">{{ codeDialogData.errorMessage }}</pre>
+        </div>
+        <div v-if="codeDialogData.compileOutput" class="code-dialog-error">
+          <div class="error-label">编译输出</div>
+          <pre class="error-pre">{{ codeDialogData.compileOutput }}</pre>
+        </div>
+        <div class="code-dialog-code">
+          <div class="code-label">源代码</div>
+          <div v-if="loadingCodeDialog" class="code-loading">
+            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+          </div>
+          <pre v-else class="code-block"><code>{{ codeDialogCode }}</code></pre>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -105,40 +138,39 @@ import { submissionApi } from '@/api/submission'
 
 const submissionStore = useSubmissionStore()
 
-const submissionCodes = ref({})
-const loadingCode = ref({})
-
-async function handleExpandChange(row, expandedRows) {
-  const isExpanded = expandedRows.some(r => r.id === row.id)
-  if (!isExpanded || submissionCodes.value[row.id]) return
-  loadingCode.value[row.id] = true
-  try {
-    const res = await submissionApi.getDetail(row.id)
-    submissionCodes.value[row.id] = res.data?.code || '暂无代码'
-  } catch {
-    submissionCodes.value[row.id] = '加载失败'
-  } finally {
-    loadingCode.value[row.id] = false
-  }
-}
-
 const statusOptions = [
-  'Pending',
-  'Queueing',
-  'Compiling',
-  'Running',
-  'Accepted',
-  'Wrong Answer',
-  'Compile Error',
-  'Runtime Error',
-  'Time Limit Exceeded',
-  'Memory Limit Exceeded',
-  'Output Limit Exceeded',
-  'System Error'
+  'Pending', 'Queueing', 'Compiling', 'Running', 'Accepted',
+  'Wrong Answer', 'Compile Error', 'Runtime Error',
+  'Time Limit Exceeded', 'Memory Limit Exceeded', 'Output Limit Exceeded', 'System Error'
 ]
 
 const filters = reactive({ problemId: '', status: '', sortBy: 'time' })
 const pagination = reactive({ page: 1, pageSize: 20 })
+
+// Code dialog state
+const codeDialogVisible = ref(false)
+const codeDialogData = ref({})
+const codeDialogCode = ref('')
+const loadingCodeDialog = ref(false)
+
+async function openCodeDialog(row) {
+  codeDialogData.value = row
+  codeDialogVisible.value = true
+  codeDialogCode.value = ''
+  loadingCodeDialog.value = true
+  try {
+    const res = await submissionApi.getDetail(row.id)
+    codeDialogCode.value = res.data?.code || '暂无代码'
+    // Update meta with full detail
+    if (res.data) {
+      codeDialogData.value = { ...row, ...res.data }
+    }
+  } catch {
+    codeDialogCode.value = '加载失败'
+  } finally {
+    loadingCodeDialog.value = false
+  }
+}
 
 let loadTimer = null
 function debouncedLoad() {
@@ -158,18 +190,12 @@ function loadSubmissions() {
 
 function statusClass(status) {
   const map = {
-    'Pending': 'status-pending',
-    'Queueing': 'status-pending',
-    'Compiling': 'status-running',
-    'Running': 'status-running',
-    'Accepted': 'status-accepted',
-    'Wrong Answer': 'status-wrong',
-    'Compile Error': 'status-ce',
-    'Runtime Error': 'status-wrong',
-    'Time Limit Exceeded': 'status-tle',
-    'Memory Limit Exceeded': 'status-mle',
-    'Output Limit Exceeded': 'status-ole',
-    'System Error': 'status-system'
+    'Pending': 'status-pending', 'Queueing': 'status-pending',
+    'Compiling': 'status-running', 'Running': 'status-running',
+    'Accepted': 'status-accepted', 'Wrong Answer': 'status-wrong',
+    'Compile Error': 'status-ce', 'Runtime Error': 'status-wrong',
+    'Time Limit Exceeded': 'status-tle', 'Memory Limit Exceeded': 'status-mle',
+    'Output Limit Exceeded': 'status-ole', 'System Error': 'status-system'
   }
   return map[status] || ''
 }
@@ -187,50 +213,83 @@ onMounted(loadSubmissions)
 </script>
 
 <style scoped>
-.page-header {
-  margin-bottom: 20px;
-}
+.page-header { margin-bottom: 20px; }
+.page-desc { color: var(--text-secondary); font-size: 14px; margin-top: 4px; }
 
 .filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; flex-wrap: wrap;
 }
 
 .link {
-  color: var(--accent-primary);
-  font-weight: 600;
+  color: var(--accent-primary); font-weight: 600;
 }
-.link:hover {
-  text-decoration: underline;
+.link:hover { text-decoration: underline; }
+
+.sub-id-link {
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 1px dashed var(--accent-blue);
+  transition: all 0.15s;
+}
+.sub-id-link:hover {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
 }
 
 .pagination-wrap {
-  display: flex;
-  justify-content: center;
-  padding: 20px;
+  display: flex; justify-content: center; padding: 20px;
 }
 
-.code-expand {
-  padding: 12px 20px;
-  min-height: 60px;
+/* Code Dialog */
+.code-dialog-content {
+  display: flex; flex-direction: column; gap: 14px;
+}
+.code-dialog-meta {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+.meta-sep { color: var(--text-muted); }
+
+.code-dialog-error {
+  background: var(--accent-red-bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.error-label {
+  font-size: 12px; font-weight: 700; color: var(--accent-red);
+  margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.error-pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-size: 12px; font-family: var(--font-mono); line-height: 1.5;
 }
 
-.code-block {
+.code-dialog-code {
   background: var(--code-bg);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  padding: 14px 16px;
+  padding: 12px;
+}
+.code-label {
+  font-size: 12px; font-weight: 700; color: var(--text-muted);
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.code-loading {
+  text-align: center; padding: 20px; color: var(--text-muted);
+}
+.code-block {
+  margin: 0;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
-  overflow-x: auto;
-  max-height: 400px;
-  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  margin: 0;
+  max-height: 50vh;
+  overflow-y: auto;
 }
 </style>

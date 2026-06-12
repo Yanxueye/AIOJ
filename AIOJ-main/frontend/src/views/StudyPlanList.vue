@@ -31,10 +31,17 @@ import { onMounted, ref } from 'vue'
 import { studyPlanApi } from '@/api/study_plan'
 
 const plans = ref([])
+const loading = ref(true)
 
 onMounted(async () => {
-  const res = await studyPlanApi.getList()
-  plans.value = res.data.items || []
+  try {
+    const res = await studyPlanApi.getList()
+    plans.value = res.data.items || []
+  } catch (e) {
+    plans.value = []
+  } finally {
+    loading.value = false
+  }
 })
 
 function diffTagType(d) {

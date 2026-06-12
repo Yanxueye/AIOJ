@@ -163,25 +163,6 @@ type ProblemTemplate struct {
 
 func (ProblemTemplate) TableName() string { return "problem_templates" }
 
-type RejudgeJob struct {
-	ID               uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	ProblemID        uint64     `gorm:"index;not null" json:"problemId"`
-	TargetVersionID  *uint64    `gorm:"index" json:"targetVersionId,omitempty"`
-	Status           string     `gorm:"type:varchar(16);index;default:'pending'" json:"status"`
-	Reason           string     `gorm:"type:text" json:"reason,omitempty"`
-	TriggeredBy      *uint64    `json:"triggeredBy,omitempty"`
-	TotalSubmissions int        `json:"totalSubmissions"`
-	ProcessedCount   int        `json:"processedCount"`
-	SucceededCount   int        `json:"succeededCount"`
-	FailedCount      int        `json:"failedCount"`
-	StartedAt        *time.Time `json:"startedAt,omitempty"`
-	FinishedAt       *time.Time `json:"finishedAt,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-}
-
-func (RejudgeJob) TableName() string { return "rejudge_jobs" }
-
 type AuditLog struct {
 	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID       *uint64   `gorm:"index" json:"userId,omitempty"`
@@ -198,8 +179,8 @@ func (AuditLog) TableName() string { return "audit_logs" }
 
 type Favorite struct {
 	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID    uint64    `gorm:"index;not null" json:"userId"`
-	ProblemID uint64    `gorm:"index;not null" json:"problemId"`
+	UserID    uint64    `gorm:"uniqueIndex:idx_user_problem;not null" json:"userId"`
+	ProblemID uint64    `gorm:"uniqueIndex:idx_user_problem;not null" json:"problemId"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -261,7 +242,7 @@ type Announcement struct {
 	Title     string    `gorm:"type:varchar(128)" json:"title"`
 	Content   string    `gorm:"type:text" json:"content"`
 	Type      string    `gorm:"type:varchar(16);default:'info'" json:"type"`
-	Date      string    `gorm:"type:varchar(16)" json:"date"`
+	Date      string    `gorm:"type:date" json:"date"`
 	CreatedAt time.Time `json:"-"`
 }
 

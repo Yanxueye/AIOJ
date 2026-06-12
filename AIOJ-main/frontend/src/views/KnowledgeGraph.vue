@@ -149,32 +149,117 @@ function initChart() {
   window.addEventListener('resize', () => chart?.resize())
 }
 
+// Difficulty levels for hierarchical layout
+const CATEGORY_LEVELS = {
+  '基础算法': 0,
+  '位运算': 0,
+  '排序': 0,
+  '搜索': 1,
+  '贪心': 1,
+  '字符串': 1,
+  '数据结构': 2,
+  '数学': 2,
+  '动态规划': 3,
+  '图论': 3,
+  '计算几何': 3
+}
+
+function getMasteryColor(mastery) {
+  if (mastery >= 80) return '#22c55e'  // green
+  if (mastery >= 60) return '#84cc16'  // lime
+  if (mastery >= 40) return '#f59e0b'  // amber
+  if (mastery >= 20) return '#f97316'  // orange
+  if (mastery > 0) return '#ef4444'    // red
+  return '#6b7280'                     // gray
+}
+
 function updateChart() {
   if (!chart) return
 
-  const nodes = graphData.value.nodes.map(n => ({
-    id: n.id,
-    name: n.name,
-    category: categories.value.indexOf(n.category),
-    symbolSize: Math.max(20, Math.min(50, 15 + (graphData.value.counts[n.id] || 0) * 3)),
-    itemStyle: {
-      color: CATEGORY_COLORS[n.category] || '#52c41a',
-      borderColor: '#fff',
-      borderWidth: 2,
-      shadowBlur: 8,
-      shadowColor: 'rgba(0,0,0,0.1)'
-    },
-    label: {
-      show: true,
-      fontSize: 11
-    }
-  }))
+  // Build hierarchical positions
+  const levelGroups = {}
+  graphData.value.nodes.forEach(n => {
+    const level = CATEGORY_LEVELS[n.category] ?? 2
+    if (!levelGroups[level]) levelGroups[level] = []
+    levelGroups[level].push(n)
+  })
 
+  const totalLevels = Object.keys(levelGroups).length || 1
+  const chartHeight = chartRef.value?.clientHeight || 500
+  const chartWidth = chartRef.value?.clientWidth || 800
+  const yStep = chartHeight / (totalLevels + 1)
+  const nodePositions = {}
+
+  Object.entries(levelGroups).forEach(([level, nodes]) => {
+    const y = (Number(level) + 1) * yStep
+    const xStep = chartWidth / (nodes.length + 1)
+    nodes.forEach((n, i) => {
+      nodePositions[n.id] = { x: (i + 1) * xStep, y }
+    })
+  })
+
+  const nodes = graphData.value.nodes.map(n => {
+    const mastery = graphData.value.mastery[n.id] || 0
+    const count = graphData.value.counts[n.id] || 0
+    const pos = nodePositions[n.id] || { x: 0, y: 0 }
+    return {
+      id: String(n.id),
+      name: n.name,
+      x: pos.x,
+      y: pos.y,
+      category: categories.value.indexOf(n.category),
+      symbolSize: Math.max(24, Math.min(56, 18 + count * 3)),
+      itemStyle: {
+        color: mastery > 0 ? getMasteryColor(mastery) : CATEGORY_COLORS[n.category] || '#52c41a',
+        borderColor: '#fff',
+        borderWidth: 2,
+        shadowBlur: mastery > 0 ? 12 : 6,
+        shadowColor: mastery > 0 ? getMasteryColor(mastery) + '80' : 'rgba(0,0,0,0.15)'
+      },
+      label: {
+        show: true,
+        fontSize: 11,
+        position: 'bottom',
+        distance: 5
+      }
+    }
+  })
+
+  // Build links with type distinction
   const links = graphData.value.edges.map(e => ({
     source: String(e.source),
     target: String(e.target),
-    lineStyle: { color: '#c8d0be', width: 1 }
+    lineStyle: {
+      color: '#c8d0be',
+      width: 1.5,
+      curveness: 0.1
+    }
   }))
+
+  // Add cross-category "related" edges for nodes that share problems
+  const crossLinks = []
+  const catGroups = {}
+  graphData.value.nodes.forEach(n => {
+    if (!catGroups[n.category]) catGroups[n.category] = []
+    catGroups[n.category].push(n.id)
+  })
+  // Add some cross-category links between related categories
+  const relatedPairs = [
+    ['动态规划', '贪心'], ['动态规划', '搜索'], ['图论', '搜索'],
+    ['数据结构', '图论'], ['字符串', '数据结构'], ['数学', '动态规划']
+  ]
+  relatedPairs.forEach(([cat1, cat2]) => {
+    const nodes1 = catGroups[cat1] || []
+    const nodes2 = catGroups[cat2] || []
+    if (nodes1.length > 0 && nodes2.length > 0) {
+      // Connect first node of each category as representative
+      crossLinks.push({
+        source: String(nodes1[0]),
+        target: String(nodes2[0]),
+        lineStyle: { color: '#94a3b8', width: 1, type: 'dashed', curveness: 0.2 }
+      })
+    }
+  })
 
   const categoryObjs = categories.value.map(c => ({ name: c }))
 
@@ -185,11 +270,21 @@ function updateChart() {
   chart.setOption({
     tooltip: {
       trigger: 'item',
+      backgroundColor: '#1e1e1e',
+      borderColor: '#3c3c3c',
+      textStyle: { color: '#e5e5e5', fontSize: 12 },
       formatter: (params) => {
         if (params.dataType === 'node') {
           const count = graphData.value.counts[params.data.id] || 0
           const mastery = Math.round(graphData.value.mastery[params.data.id] || 0)
-          return `<b>${params.name}</b><br/>关联题目: ${count}<br/>掌握度: ${mastery}%`
+          const kp = graphData.value.nodes.find(n => String(n.id) === String(params.data.id))
+          const level = CATEGORY_LEVELS[kp?.category] ?? '?'
+          const levelNames = ['基础', '进阶', '中级', '高级']
+          return `<div style="font-weight:700;margin-bottom:4px">${params.name}</div>
+            <div style="color:#888;font-size:11px">${kp?.category} · ${levelNames[level] || ''}</div>
+            <div style="margin-top:6px">关联题目: <b>${count}</b></div>
+            <div>掌握度: <b style="color:${getMasteryColor(mastery)}">${mastery}%</b></div>
+            <div style="color:#888;font-size:11px;margin-top:4px">点击查看相关题目</div>`
         }
         return ''
       }
@@ -201,24 +296,24 @@ function updateChart() {
     },
     series: [{
       type: 'graph',
-      layout: 'force',
+      layout: 'none',
       data: nodes,
-      links: links,
+      links: [...links, ...crossLinks],
       categories: categoryObjs,
       roam: true,
       draggable: true,
-      force: {
-        repulsion: 300,
-        edgeLength: [80, 160],
-        gravity: 0.1
-      },
       emphasis: {
         focus: 'adjacency',
-        lineStyle: { width: 3 }
+        lineStyle: { width: 3 },
+        itemStyle: { shadowBlur: 20 }
       },
       label: {
         position: 'bottom',
-        color: textColor
+        color: textColor,
+        fontSize: 11
+      },
+      lineStyle: {
+        opacity: 0.6
       }
     }]
   }, true)

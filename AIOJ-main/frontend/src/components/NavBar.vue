@@ -105,7 +105,7 @@ function handleCommand(cmd) {
   if (cmd === 'profile') {
     router.push('/profile')
   } else if (cmd === 'admin-problem') {
-    router.push('/admin/problems/new')
+    router.push('/problems')
   } else if (cmd === 'admin-users') {
     router.push('/admin/users')
   } else if (cmd === 'admin-audit') {

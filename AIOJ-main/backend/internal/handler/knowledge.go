@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -22,14 +23,18 @@ func (h *KnowledgeHandler) List(c *gin.Context) {
 	if category != "" {
 		q = q.Where("category = ?", category)
 	}
-	q.Order("category, name").Find(&points)
+	if err := q.Order("category, name").Find(&points).Error; err != nil {
+		log.Printf("[knowledge] list query failed: %v", err)
+	}
 	utils.OK(c, gin.H{"items": points})
 }
 
 // Graph returns knowledge points with their relationships for visualization.
 func (h *KnowledgeHandler) Graph(c *gin.Context) {
 	var points []models.KnowledgePoint
-	h.DB.Find(&points)
+	if err := h.DB.Find(&points).Error; err != nil {
+		log.Printf("[knowledge] graph query failed: %v", err)
+	}
 
 	// Build nodes
 	type Node struct {
@@ -70,9 +75,11 @@ func (h *KnowledgeHandler) Graph(c *gin.Context) {
 		Count            int
 	}
 	var counts []ProblemCount
-	h.DB.Model(&models.ProblemKnowledgePoint{}).
+	if err := h.DB.Model(&models.ProblemKnowledgePoint{}).
 		Select("knowledge_point_id, COUNT(*) as count").
-		Group("knowledge_point_id").Scan(&counts)
+		Group("knowledge_point_id").Scan(&counts).Error; err != nil {
+		log.Printf("[knowledge] problem count query failed: %v", err)
+	}
 	countMap := make(map[uint64]int)
 	for _, pc := range counts {
 		countMap[pc.KnowledgePointID] = pc.Count
@@ -83,7 +90,9 @@ func (h *KnowledgeHandler) Graph(c *gin.Context) {
 	masteryMap := make(map[uint64]float64)
 	if uid > 0 {
 		var masteries []models.UserKnowledgeMastery
-		h.DB.Where("user_id = ?", uid).Find(&masteries)
+		if err := h.DB.Where("user_id = ?", uid).Find(&masteries).Error; err != nil {
+			log.Printf("[knowledge] mastery query for uid=%d failed: %v", uid, err)
+		}
 		for _, m := range masteries {
 			masteryMap[m.KnowledgePointID] = m.MasteryLevel
 		}
@@ -106,7 +115,9 @@ func (h *KnowledgeHandler) ProblemsForKP(c *gin.Context) {
 	}
 
 	var mappings []models.ProblemKnowledgePoint
-	h.DB.Where("knowledge_point_id = ?", kpID).Find(&mappings)
+	if err := h.DB.Where("knowledge_point_id = ?", kpID).Find(&mappings).Error; err != nil {
+		log.Printf("[knowledge] mapping query for kp=%d failed: %v", kpID, err)
+	}
 	problemIDs := make([]uint64, len(mappings))
 	for i, m := range mappings {
 		problemIDs[i] = m.ProblemID
@@ -114,7 +125,9 @@ func (h *KnowledgeHandler) ProblemsForKP(c *gin.Context) {
 
 	var problems []models.Problem
 	if len(problemIDs) > 0 {
-		h.DB.Where("id IN ? AND status = ?", problemIDs, models.ProblemStatusPublished).Find(&problems)
+		if err := h.DB.Where("id IN ? AND status = ?", problemIDs, models.ProblemStatusPublished).Find(&problems).Error; err != nil {
+			log.Printf("[knowledge] problems query for kp=%d failed: %v", kpID, err)
+		}
 	}
 
 	utils.OK(c, gin.H{"items": problems})

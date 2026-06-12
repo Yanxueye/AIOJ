@@ -3,11 +3,13 @@
     <div class="chart-row">
       <div class="chart-card card">
         <div class="card-title">难度分布</div>
-        <v-chart :option="difficultyOption" autoresize style="height: 280px" />
+        <div v-if="!hasDifficultyData" class="empty-state">暂无做题数据</div>
+        <v-chart v-else :option="difficultyOption" autoresize style="height: 280px" />
       </div>
       <div class="chart-card card">
         <div class="card-title">算法分类统计</div>
-        <v-chart :option="algorithmOption" autoresize style="height: 280px" />
+        <div v-if="!hasAlgorithmData" class="empty-state">暂无做题数据</div>
+        <v-chart v-else :option="algorithmOption" autoresize style="height: 280px" />
       </div>
     </div>
   </div>
@@ -29,6 +31,9 @@ const props = defineProps({
 })
 
 const DIFF_COLORS = { '简单': '#22c55e', '中等': '#f59e0b', '困难': '#ef4444' }
+
+const hasDifficultyData = computed(() => Object.keys(props.difficultyData).length > 0)
+const hasAlgorithmData = computed(() => Object.keys(props.algorithmData).length > 0)
 
 const difficultyOption = computed(() => ({
   tooltip: { trigger: 'item', formatter: '{b}: {c} 题 ({d}%)' },
@@ -85,6 +90,14 @@ const algorithmOption = computed(() => {
 }
 .chart-card {
   min-height: 340px;
+}
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 280px;
+  color: #909399;
+  font-size: 14px;
 }
 @media (max-width: 768px) {
   .chart-row {

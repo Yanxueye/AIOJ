@@ -40,10 +40,10 @@ func Init(cfg config.MySQLConfig) (*gorm.DB, error) {
 			&models.ProblemSample{},
 			&models.ProblemTestCase{},
 			&models.ProblemTemplate{},
-			&models.RejudgeJob{},
 			&models.AuditLog{},
 			&models.Favorite{},
 			&models.ProblemSolution{},
+			&models.SolutionLike{},
 			&models.StudyPlan{},
 			&models.StudyPlanItem{},
 			&models.UserPlanProgress{},
@@ -58,6 +58,9 @@ func Init(cfg config.MySQLConfig) (*gorm.DB, error) {
 			&models.KnowledgePoint{},
 			&models.ProblemKnowledgePoint{},
 			&models.UserKnowledgeMastery{},
+			&models.RatingHistory{},
+			&models.AlgorithmTag{},
+			&models.UserKnowledgeGraph{},
 		); err != nil {
 			return nil, fmt.Errorf("auto migrate: %w", err)
 		}
@@ -229,11 +232,7 @@ func loadLegacyProblemSnapshot(conn *gorm.DB, problemID uint64) (string, string,
 }
 
 func legacyDefaultTemplates() []models.ProblemTemplate {
-	return []models.ProblemTemplate{
-		{Language: "cpp", Code: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n"},
-		{Language: "python", Code: "import sys\ninput = sys.stdin.readline\n\ndef solve():\n    pass\n\nsolve()\n"},
-		{Language: "go", Code: "package main\n\nfunc main() {\n}\n"},
-	}
+	return models.DefaultTemplates()
 }
 
 func localMin(a, b int) int {

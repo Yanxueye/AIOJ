@@ -6,6 +6,10 @@ export const useAIStore = defineStore('ai', () => {
   const conversations = ref([])
   const currentMessages = ref([])
   const loading = ref(false)
+  const chatLoading = ref(false)
+  const diagnoseLoading = ref(false)
+  const solveLoading = ref(false)
+  const error = ref(null)
   const currentConversationId = ref(null)
 
   function addMessage(role, content) {
@@ -20,6 +24,8 @@ export const useAIStore = defineStore('ai', () => {
   async function sendMessage(content, problemContext = null) {
     addMessage('user', content)
     loading.value = true
+    chatLoading.value = true
+    error.value = null
     try {
       const res = await aiApi.chat({
         message: content,
@@ -34,10 +40,12 @@ export const useAIStore = defineStore('ai', () => {
       addMessage('assistant', res.data.reply)
       return res.data.reply
     } catch (err) {
+      error.value = 'AI 服务暂时不可用，请稍后重试。'
       addMessage('assistant', '抱歉，AI 服务暂时不可用，请稍后重试。')
       throw err
     } finally {
       loading.value = false
+      chatLoading.value = false
     }
   }
 
@@ -61,41 +69,51 @@ export const useAIStore = defineStore('ai', () => {
   async function diagnoseCode({ problemId, language, code, submissionId = 0, judgeStatus = '', errorMessage = '' }) {
     addMessage('user', '请诊断当前代码并指出潜在错误。')
     loading.value = true
+    diagnoseLoading.value = true
+    error.value = null
     try {
       const res = await aiApi.diagnoseCode({ problemId, language, code, submissionId, judgeStatus, errorMessage })
       addMessage('assistant', res.data.rawMarkdown || formatDiagnosis(res.data))
       return res.data
     } catch (err) {
+      error.value = '代码诊断服务暂时不可用，请稍后重试。'
       addMessage('assistant', '代码诊断服务暂时不可用，请稍后重试。')
       throw err
     } finally {
       loading.value = false
+      diagnoseLoading.value = false
     }
   }
 
   async function solveProblem({ problemId, question = '', level = 'hint' }) {
     addMessage('user', level === 'hint' ? '请给我这道题的解题提示。' : '请讲解这道题的解法。')
     loading.value = true
+    solveLoading.value = true
+    error.value = null
     try {
       const res = await aiApi.solveProblem({ problemId, question, level })
       addMessage('assistant', formatSolve(res.data))
       return res.data
     } catch (err) {
+      error.value = '解题服务暂时不可用，请稍后重试。'
       addMessage('assistant', '解题服务暂时不可用，请稍后重试。')
       throw err
     } finally {
       loading.value = false
+      solveLoading.value = false
     }
   }
 
   async function buildKnowledgeGraph({ problemId = null, scope = 'recent' } = {}) {
     addMessage('user', problemId ? '请基于当前题目整理我的知识图谱。' : '请基于最近做题记录整理我的知识图谱。')
     loading.value = true
+    error.value = null
     try {
       const res = await aiApi.buildKnowledgeGraph({ problemId, scope })
       addMessage('assistant', res.data.rawMarkdown || formatKnowledgeGraph(res.data))
       return res.data
     } catch (err) {
+      error.value = '知识图谱服务暂时不可用，请稍后重试。'
       addMessage('assistant', '知识图谱服务暂时不可用，请稍后重试。')
       throw err
     } finally {
@@ -106,6 +124,7 @@ export const useAIStore = defineStore('ai', () => {
   function clearMessages() {
     currentMessages.value = []
     currentConversationId.value = null
+    error.value = null
   }
 
   function startNewConversation(problemContext = null) {
@@ -131,7 +150,7 @@ export const useAIStore = defineStore('ai', () => {
   }
 
   return {
-    conversations, currentMessages, loading, currentConversationId,
+    conversations, currentMessages, loading, chatLoading, diagnoseLoading, solveLoading, error, currentConversationId,
     sendMessage, loadHistory, loadMessages, diagnoseCode, solveProblem, buildKnowledgeGraph,
     clearMessages, startNewConversation, addMessage
   }

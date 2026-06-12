@@ -47,6 +47,7 @@
         <el-table-column label="状态" width="60" align="center">
           <template #default="{ row }">
             <el-icon v-if="row.accepted" :style="{ color: 'var(--accent-green)' }" :size="18"><CircleCheckFilled /></el-icon>
+            <el-icon v-else-if="row.attempted" :style="{ color: 'var(--accent-orange)' }" :size="18"><WarningFilled /></el-icon>
             <span v-else class="status-dash">-</span>
           </template>
         </el-table-column>
@@ -106,16 +107,17 @@
 </template>
 
 <script setup>
-import { onMounted, reactive } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProblemStore } from '@/stores/problem'
 import { useUserStore } from '@/stores/user'
+import { tagApi } from '@/api/tag'
 
 const router = useRouter()
 const problemStore = useProblemStore()
 const userStore = useUserStore()
 
-const tags = ['动态规划', '贪心', '搜索', '图论', '数学', '字符串', '数据结构', '模拟', '排序', '二分']
+const tags = ref([])
 
 const filters = reactive({ keyword: '', difficulty: '', tag: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20 })
@@ -159,6 +161,12 @@ onMounted(async () => {
     try {
       await userStore.fetchProfile()
     } catch {}
+  }
+  try {
+    const tagResp = await tagApi.getList()
+    tags.value = tagResp.data?.items?.map(t => t.name) || []
+  } catch {
+    // Fallback: keep the empty array, dropdown will just show no options
   }
   loadProblems()
 })

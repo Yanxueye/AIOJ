@@ -58,112 +58,29 @@ func (w *Worker) process(ctx context.Context, raw []byte) {
 		return
 	}
 
+	log.Printf("[worker] received task: sub=%d problem=%d lang=%s", task.SubmissionID, task.ProblemID, task.Language)
 	if err := w.processNewSubmission(ctx, task); err != nil {
 		log.Printf("[worker] process submission %d failed: %v", task.SubmissionID, err)
 	}
 }
 
 func (w *Worker) processNewSubmission(ctx context.Context, task SubmitTask) error {
-	now := time.Now().UTC()
-	queueStarted := now
-	sub := &models.Submission{
-		ID:             task.SubmissionID,
-		UserID:         task.UserID,
-		ProblemID:      task.ProblemID,
-		ProblemTitle:   task.ProblemTitle,
-		TraceID:        task.TraceID,
-		Source:         task.Source,
-		Language:       task.Language,
-		Code:           task.Code,
-		CodeLength:     len(task.Code),
-		Status:         models.StatusQueueing,
-		Runtime:        0,
-		RuntimeMS:      0,
-		Memory:         "0.0",
-		MemoryKB:       0,
-		QueueStartedAt: &queueStarted,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-	}
-	if err := w.DB.Create(sub).Error; err != nil {
-		return fmt.Errorf("insert submission %d: %w", task.SubmissionID, err)
-	}
-	return w.judgeSubmission(ctx, sub)
-}
-
-func (w *Worker) RejudgeSubmission(ctx context.Context, submissionID uint64) error {
+	// Load existing submission (created by the handler with auto-increment ID)
 	var sub models.Submission
-	if err := w.DB.Where("id = ? AND source = ?", submissionID, "submit").First(&sub).Error; err != nil {
-		return err
+	if err := w.DB.First(&sub, task.SubmissionID).Error; err != nil {
+		return fmt.Errorf("load submission %d: %w", task.SubmissionID, err)
 	}
-
-	now := time.Now().UTC()
+	sub.TraceID = task.TraceID
 	sub.Status = models.StatusQueueing
-	sub.Runtime = 0
-	sub.RuntimeMS = 0
-	sub.Memory = "0.0"
-	sub.MemoryKB = 0
-	sub.CompileOutput = ""
-	sub.ErrorMessage = ""
-	sub.QueueStartedAt = &now
-	sub.JudgeStartedAt = nil
-	sub.FinishedAt = nil
-	sub.UpdatedAt = now
+	sub.UpdatedAt = time.Now().UTC()
 	if err := w.DB.Save(&sub).Error; err != nil {
-		return err
+		return fmt.Errorf("update submission %d: %w", task.SubmissionID, err)
 	}
 	return w.judgeSubmission(ctx, &sub)
 }
 
-func (w *Worker) ProcessRejudgeJob(ctx context.Context, jobID uint64) error {
-	var job models.RejudgeJob
-	if err := w.DB.First(&job, jobID).Error; err != nil {
-		return err
-	}
-	if job.Status != "pending" {
-		return nil
-	}
-
-	now := time.Now().UTC()
-	job.Status = "running"
-	job.StartedAt = &now
-	job.UpdatedAt = now
-	if err := w.DB.Save(&job).Error; err != nil {
-		return err
-	}
-
-	var subs []models.Submission
-	if err := w.DB.Where("problem_id = ? AND source = ?", job.ProblemID, "submit").Order("id ASC").Find(&subs).Error; err != nil {
-		job.Status = "failed"
-		job.UpdatedAt = time.Now().UTC()
-		_ = w.DB.Save(&job).Error
-		return err
-	}
-
-	job.TotalSubmissions = len(subs)
-	_ = w.DB.Save(&job).Error
-
-	for _, item := range subs {
-		err := w.RejudgeSubmission(ctx, item.ID)
-		job.ProcessedCount++
-		if err != nil {
-			job.FailedCount++
-			log.Printf("[rejudge] submission %d failed: %v", item.ID, err)
-		} else {
-			job.SucceededCount++
-		}
-		job.UpdatedAt = time.Now().UTC()
-		_ = w.DB.Save(&job).Error
-	}
-
-	finished := time.Now().UTC()
-	job.Status = "finished"
-	job.FinishedAt = &finished
-	job.UpdatedAt = finished
-	return w.DB.Save(&job).Error
-}
-
 func (w *Worker) judgeSubmission(ctx context.Context, sub *models.Submission) error {
+	t0 := time.Now()
 	var problem models.Problem
 	if err := w.DB.Preload("PublishedVersion.TestCases").Preload("PublishedVersion").First(&problem, sub.ProblemID).Error; err != nil {
 		w.fail(sub, models.StatusSystemErr, "problem not found")
@@ -173,6 +90,7 @@ func (w *Worker) judgeSubmission(ctx context.Context, sub *models.Submission) er
 		w.fail(sub, models.StatusSystemErr, "problem has no published version")
 		return errors.New("problem has no published version")
 	}
+	log.Printf("[worker] sub %d: loaded problem %d with %d test cases (%v)", sub.ID, sub.ProblemID, len(problem.PublishedVersion.TestCases), time.Since(t0))
 
 	judgeStarted := time.Now().UTC()
 	sub.Status = models.StatusCompiling
@@ -180,6 +98,7 @@ func (w *Worker) judgeSubmission(ctx context.Context, sub *models.Submission) er
 	if err := w.DB.Save(sub).Error; err != nil {
 		return err
 	}
+	log.Printf("[worker] sub %d: status -> Compiling, calling judger...", sub.ID)
 
 	req := &judger.JudgeRequest{
 		SubmissionID:  sub.ID,
@@ -199,10 +118,26 @@ func (w *Worker) judgeSubmission(ctx context.Context, sub *models.Submission) er
 		})
 	}
 
-	resp, err := w.Judger.Judge(ctx, req)
-	if err != nil {
-		w.fail(sub, models.StatusSystemErr, "judger rpc failed: "+err.Error())
-		return err
+	// Retry RPC call with exponential backoff (max 3 attempts)
+	var resp *judger.JudgeResponse
+	const maxRetries = 3
+	judgeStart := time.Now()
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		var rpcErr error
+		resp, rpcErr = w.Judger.Judge(ctx, req)
+		if rpcErr == nil {
+			log.Printf("[worker] sub %d: judge RPC success on attempt %d (%v)", sub.ID, attempt, time.Since(judgeStart))
+			break
+		}
+		if attempt < maxRetries {
+			backoff := time.Duration(1<<uint(attempt-1)) * 500 * time.Millisecond
+			log.Printf("[worker] sub %d: judge RPC failed (attempt %d/%d): %v, retrying in %v", sub.ID, attempt, maxRetries, rpcErr, backoff)
+			time.Sleep(backoff)
+		} else {
+			log.Printf("[worker] sub %d: judge RPC failed after %d attempts: %v (%v)", sub.ID, maxRetries, rpcErr, time.Since(judgeStart))
+			w.fail(sub, models.StatusSystemErr, "judger rpc failed after retries: "+rpcErr.Error())
+			return rpcErr
+		}
 	}
 
 	finishedAt := time.Now().UTC()
@@ -216,11 +151,19 @@ func (w *Worker) judgeSubmission(ctx context.Context, sub *models.Submission) er
 	sub.FinishedAt = &finishedAt
 	sub.UpdatedAt = finishedAt
 
+	// Build lookup map for test case input/expected
+	tcMap := make(map[int]string, len(problem.PublishedVersion.TestCases)*2)
+	for _, tc := range problem.PublishedVersion.TestCases {
+		tcMap[int(tc.CaseNo)*100+1] = tc.Input   // encode: caseNo*100+1 = input
+		tcMap[int(tc.CaseNo)*100+2] = tc.Expected // encode: caseNo*100+2 = expected
+	}
+
 	caseResults := make([]models.SubmissionCaseResult, len(resp.CaseResults))
 	for i, item := range resp.CaseResults {
+		cn := int(item.CaseNo)
 		caseResults[i] = models.SubmissionCaseResult{
 			SubmissionID:  sub.ID,
-			CaseNo:        int(item.CaseNo),
+			CaseNo:        cn,
 			Status:        item.Status,
 			RuntimeMS:     int(item.RuntimeMS),
 			MemoryKB:      int(item.MemoryKB),
@@ -229,11 +172,14 @@ func (w *Worker) judgeSubmission(ctx context.Context, sub *models.Submission) er
 			Signal:        item.Signal,
 			StdoutPreview: item.StdoutPreview,
 			StderrPreview: item.StderrPreview,
+			Input:         tcMap[cn*100+1],
+			Expected:      tcMap[cn*100+2],
 		}
 	}
 	if err := w.DB.Save(sub).Error; err != nil {
 		return err
 	}
+	log.Printf("[worker] sub %d: final status -> %s (total %v)", sub.ID, sub.Status, time.Since(t0))
 
 	w.DB.Where("submission_id = ?", sub.ID).Delete(&models.SubmissionCaseResult{})
 	if len(caseResults) > 0 {
@@ -361,6 +307,19 @@ func (w *Worker) updateUserRating(userID, problemID uint64) {
 	if newRating != user.Rating {
 		if err := w.DB.Model(&user).UpdateColumn("rating", newRating).Error; err != nil {
 			log.Printf("[worker] failed to update rating for user %d: %v", userID, err)
+			return
+		}
+		// Record rating history
+		history := models.RatingHistory{
+			UserID:    userID,
+			OldRating: user.Rating,
+			NewRating: newRating,
+			Delta:     newRating - user.Rating,
+			ProblemID: problemID,
+			Reason:    "accepted",
+		}
+		if err := w.DB.Create(&history).Error; err != nil {
+			log.Printf("[worker] failed to record rating history for user %d: %v", userID, err)
 		}
 	}
 }

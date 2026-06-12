@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
@@ -82,11 +83,6 @@ type rollbackReq struct {
 	VersionID uint64 `json:"versionId" binding:"required"`
 }
 
-type rejudgeReq struct {
-	Reason          string `json:"reason"`
-	TargetVersionID uint64 `json:"targetVersionId"`
-}
-
 type solutionReq struct {
 	Title       string `json:"title" binding:"required"`
 	Content     string `json:"content" binding:"required"`
@@ -138,23 +134,15 @@ func (h *ProblemHandler) List(c *gin.Context) {
 		q = q.Where("JSON_CONTAINS(tags, JSON_QUOTE(?))", tag)
 	}
 
-	var total int64
-	q.Count(&total)
-
-	var rows []models.Problem
-	if err := q.Preload("PublishedVersion").Order("id ASC").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
-		utils.Server(c, err.Error())
-		return
-	}
-
 	uid, logged := middleware.CurrentUserID(c)
-	acceptedSet := map[uint64]bool{}
-	attemptedSet := map[uint64]bool{}
-	favoriteSet := map[uint64]bool{}
-	if logged && len(rows) > 0 {
-		ids := make([]uint64, 0, len(rows))
-		for _, p := range rows {
-			ids = append(ids, p.ID)
+
+	// Build user-status sets for a given set of problem IDs
+	buildStatusSets := func(ids []uint64) (acceptedSet, attemptedSet, favoriteSet map[uint64]bool) {
+		acceptedSet = map[uint64]bool{}
+		attemptedSet = map[uint64]bool{}
+		favoriteSet = map[uint64]bool{}
+		if !logged || len(ids) == 0 {
+			return
 		}
 		var solved []uint64
 		h.DB.Model(&models.Submission{}).
@@ -177,11 +165,73 @@ func (h *ProblemHandler) List(c *gin.Context) {
 		for _, id := range favorites {
 			favoriteSet[id] = true
 		}
+		return
 	}
 
-	list := make([]problemListItem, 0, len(rows))
-	for _, p := range rows {
-		item := problemListItem{
+	var total int64
+	var pageIDs []uint64
+
+	if statusFilter == "" || statusFilter == "all" {
+		// No status filter: use DB count directly, paginate in SQL
+		q.Count(&total)
+		var idRows []uint64
+		q.Order("id ASC").Offset((page - 1) * size).Limit(size).Pluck("id", &idRows)
+		pageIDs = idRows
+	} else {
+		// Status filter depends on per-user state: fetch all matching IDs, filter, then paginate
+		var allIDs []uint64
+		q.Order("id ASC").Pluck("id", &allIDs)
+
+		acceptedSet, attemptedSet, favoriteSet := buildStatusSets(allIDs)
+
+		// Filter IDs by status
+		filtered := make([]uint64, 0, len(allIDs))
+		for _, id := range allIDs {
+			item := problemListItem{Accepted: acceptedSet[id], Attempted: attemptedSet[id], Favorite: favoriteSet[id]}
+			if matchesStatusFilter(statusFilter, item) {
+				filtered = append(filtered, id)
+			}
+		}
+		total = int64(len(filtered))
+
+		// Paginate the filtered IDs
+		start := (page - 1) * size
+		if start > len(filtered) {
+			start = len(filtered)
+		}
+		end := start + size
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		pageIDs = filtered[start:end]
+	}
+
+	if len(pageIDs) == 0 {
+		utils.OK(c, gin.H{"list": []problemListItem{}, "total": total})
+		return
+	}
+
+	// Load full problem data for the current page
+	var rows []models.Problem
+	if err := h.DB.Preload("PublishedVersion").Where("id IN ?", pageIDs).Find(&rows).Error; err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+	// Maintain the original order
+	rowMap := make(map[uint64]models.Problem, len(rows))
+	for _, r := range rows {
+		rowMap[r.ID] = r
+	}
+
+	acceptedSet, attemptedSet, favoriteSet := buildStatusSets(pageIDs)
+
+	list := make([]problemListItem, 0, len(pageIDs))
+	for _, id := range pageIDs {
+		p, ok := rowMap[id]
+		if !ok {
+			continue
+		}
+		list = append(list, problemListItem{
 			ID:              p.ID,
 			Title:           p.Title,
 			Difficulty:      p.Difficulty,
@@ -193,13 +243,9 @@ func (h *ProblemHandler) List(c *gin.Context) {
 			Accepted:        acceptedSet[p.ID],
 			Favorite:        favoriteSet[p.ID],
 			Attempted:       attemptedSet[p.ID],
-		}
-		if !matchesStatusFilter(statusFilter, item) {
-			continue
-		}
-		list = append(list, item)
+		})
 	}
-	utils.OK(c, gin.H{"list": list, "total": len(list)})
+	utils.OK(c, gin.H{"list": list, "total": total})
 }
 
 func (h *ProblemHandler) Detail(c *gin.Context) {
@@ -371,10 +417,20 @@ func (h *ProblemHandler) LikeSolution(c *gin.Context) {
 	err = tx.Where("solution_id = ? AND user_id = ?", sid, uid).First(&existing).Error
 	if err == nil {
 		// Already liked, unlike
-		tx.Delete(&existing)
-		tx.Model(&solution).UpdateColumn("like_count", gorm.Expr("GREATEST(like_count - 1, 0)"))
-		tx.Commit()
-		// Re-read actual count from DB
+		if err := tx.Delete(&existing).Error; err != nil {
+			tx.Rollback()
+			utils.Server(c, err.Error())
+			return
+		}
+		if err := tx.Model(&solution).UpdateColumn("like_count", gorm.Expr("GREATEST(like_count - 1, 0)")).Error; err != nil {
+			tx.Rollback()
+			utils.Server(c, err.Error())
+			return
+		}
+		if err := tx.Commit().Error; err != nil {
+			utils.Server(c, err.Error())
+			return
+		}
 		h.DB.First(&solution, sid)
 		utils.OK(c, gin.H{"liked": false, "likeCount": solution.LikeCount})
 		return
@@ -383,14 +439,27 @@ func (h *ProblemHandler) LikeSolution(c *gin.Context) {
 	like := models.SolutionLike{SolutionID: sid, UserID: uid}
 	if err := tx.Create(&like).Error; err != nil {
 		tx.Rollback()
-		// Likely duplicate key from concurrent request, treat as already liked
-		h.DB.First(&solution, sid)
-		utils.OK(c, gin.H{"liked": true, "likeCount": solution.LikeCount})
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			// Already liked — re-query for current count
+			if dbErr := h.DB.First(&solution, sid).Error; dbErr != nil {
+				utils.Server(c, dbErr.Error())
+				return
+			}
+			utils.OK(c, gin.H{"liked": true, "likeCount": solution.LikeCount})
+			return
+		}
+		utils.Server(c, err.Error())
 		return
 	}
-	tx.Model(&solution).UpdateColumn("like_count", gorm.Expr("like_count + 1"))
-	tx.Commit()
-	// Re-read actual count from DB
+	if err := tx.Model(&solution).UpdateColumn("like_count", gorm.Expr("like_count + 1")).Error; err != nil {
+		tx.Rollback()
+		utils.Server(c, err.Error())
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
 	h.DB.First(&solution, sid)
 	utils.OK(c, gin.H{"liked": true, "likeCount": solution.LikeCount})
 }
@@ -406,12 +475,17 @@ func (h *ProblemHandler) DeleteSolution(c *gin.Context) {
 		utils.NotFound(c, "题解不存在")
 		return
 	}
-	// Delete associated likes first
-	h.DB.Where("solution_id = ?", sid).Delete(&models.SolutionLike{})
-	if err := h.DB.Delete(&solution).Error; err != nil {
+	// Delete associated likes and solution in a transaction
+	if err := h.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("solution_id = ?", sid).Delete(&models.SolutionLike{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&solution).Error
+	}); err != nil {
 		utils.Server(c, err.Error())
 		return
 	}
+	h.writeAuditLog(c, "solution", strconv.FormatUint(sid, 10), "delete", fmt.Sprintf("deleted solution for problem %d", solution.ProblemID))
 	utils.OK(c, gin.H{"deleted": true, "id": sid})
 }
 
@@ -538,13 +612,10 @@ func (h *ProblemHandler) Favorite(c *gin.Context) {
 		utils.NotFound(c, "题目不存在")
 		return
 	}
-	var count int64
-	h.DB.Model(&models.Favorite{}).Where("user_id = ? AND problem_id = ?", uid, id).Count(&count)
-	if count == 0 {
-		if err := h.DB.Create(&models.Favorite{UserID: uid, ProblemID: id}).Error; err != nil {
-			utils.Server(c, err.Error())
-			return
-		}
+	// Use INSERT IGNORE to handle concurrent requests
+	if err := h.DB.Exec("INSERT IGNORE INTO favorites (user_id, problem_id, created_at) VALUES (?, ?, ?)", uid, id, time.Now()).Error; err != nil {
+		utils.Server(c, err.Error())
+		return
 	}
 	utils.OK(c, gin.H{"problemId": id, "favorite": true})
 }
@@ -614,25 +685,6 @@ func (h *ProblemHandler) Versions(c *gin.Context) {
 		})
 	}
 	utils.OK(c, gin.H{"problemId": p.ID, "items": items})
-}
-
-func (h *ProblemHandler) RejudgeJobs(c *gin.Context) {
-	p, err := h.loadProblem(c.Param("id"))
-	if err != nil {
-		utils.BadRequest(c, "题号不合法")
-		return
-	}
-	if p == nil {
-		utils.NotFound(c, "题目不存在")
-		return
-	}
-
-	var jobs []models.RejudgeJob
-	if err := h.DB.Where("problem_id = ?", p.ID).Order("id DESC").Find(&jobs).Error; err != nil {
-		utils.Server(c, err.Error())
-		return
-	}
-	utils.OK(c, gin.H{"problemId": p.ID, "items": jobs})
 }
 
 func (h *ProblemHandler) Create(c *gin.Context) {
@@ -876,43 +928,6 @@ func (h *ProblemHandler) Rollback(c *gin.Context) {
 	utils.OK(c, adminProblemView(p, chosenVersion(p)))
 }
 
-func (h *ProblemHandler) Rejudge(c *gin.Context) {
-	p, err := h.loadProblem(c.Param("id"))
-	if err != nil {
-		utils.BadRequest(c, "题号不合法")
-		return
-	}
-	if p == nil {
-		utils.NotFound(c, "题目不存在")
-		return
-	}
-
-	var req rejudgeReq
-	_ = c.ShouldBindJSON(&req)
-
-	var total int64
-	if err := h.DB.Model(&models.Submission{}).Where("problem_id = ? AND source = ?", p.ID, "submit").Count(&total).Error; err != nil {
-		utils.Server(c, err.Error())
-		return
-	}
-
-	editorID, _ := middleware.CurrentUserID(c)
-	job := models.RejudgeJob{
-		ProblemID:        p.ID,
-		TargetVersionID:  nilIfZero(req.TargetVersionID),
-		Status:           "pending",
-		Reason:           req.Reason,
-		TriggeredBy:      uint64Ptr(editorID),
-		TotalSubmissions: int(total),
-	}
-	if err := h.DB.Create(&job).Error; err != nil {
-		utils.Server(c, err.Error())
-		return
-	}
-	h.writeAuditLog(c, "rejudge_job", strconv.FormatUint(job.ID, 10), "create", "created rejudge job for problem "+strconv.FormatUint(p.ID, 10))
-	utils.OK(c, job)
-}
-
 func (h *ProblemHandler) Delete(c *gin.Context) {
 	p, err := h.loadProblem(c.Param("id"))
 	if err != nil {
@@ -947,6 +962,17 @@ func (h *ProblemHandler) Delete(c *gin.Context) {
 				return err
 			}
 		}
+		// Clean up solutions and their likes
+		var solutionIDs []uint64
+		tx.Model(&models.ProblemSolution{}).Where("problem_id = ?", p.ID).Pluck("id", &solutionIDs)
+		if len(solutionIDs) > 0 {
+			tx.Where("solution_id IN ?", solutionIDs).Delete(&models.SolutionLike{})
+		}
+		tx.Where("problem_id = ?", p.ID).Delete(&models.ProblemSolution{})
+		// Clean up favorites
+		tx.Where("problem_id = ?", p.ID).Delete(&models.Favorite{})
+		// Clean up knowledge point mappings
+		tx.Where("problem_id = ?", p.ID).Delete(&models.ProblemKnowledgePoint{})
 		return tx.Delete(p).Error
 	}); err != nil {
 		utils.Server(c, err.Error())
@@ -1026,6 +1052,9 @@ func normalizeProblemPayload(req *problemPayload) bool {
 	if len(req.TestCases) == 0 {
 		return false
 	}
+	if !isValidDifficulty(req.Difficulty) {
+		req.Difficulty = "中等"
+	}
 	if req.TimeLimit <= 0 {
 		req.TimeLimit = 1000
 	}
@@ -1052,14 +1081,21 @@ func normalizeProblemPayload(req *problemPayload) bool {
 		}
 	}
 	if len(req.Templates) == 0 {
-		req.Templates = []templatePayload{
-			{Language: "cpp", Code: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n"},
-			{Language: "python", Code: "import sys\ninput = sys.stdin.readline\n\ndef solve():\n    pass\n\nsolve()\n"},
-			{Language: "go", Code: "package main\n\nfunc main() {\n}\n"},
+		for _, t := range models.DefaultTemplates() {
+			req.Templates = append(req.Templates, templatePayload{Language: t.Language, Code: t.Code})
 		}
 	}
 	req.Status = defaultProblemStatus(req.Status)
 	return true
+}
+
+func isValidDifficulty(d string) bool {
+	switch d {
+	case "简单", "中等", "困难":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildProblemVersion(problemID uint64, versionNo int, req problemPayload, editorID uint64, publishedAt *time.Time) models.ProblemVersion {
@@ -1211,13 +1247,6 @@ func timePtrToString(t *time.Time) string {
 }
 
 func uint64Ptr(v uint64) *uint64 {
-	if v == 0 {
-		return nil
-	}
-	return &v
-}
-
-func nilIfZero(v uint64) *uint64 {
 	if v == 0 {
 		return nil
 	}

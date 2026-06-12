@@ -2,9 +2,13 @@ package rag
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/tmc/langchaingo/documentloaders"
@@ -67,7 +71,16 @@ func (s *Service) SetEmbedder(embedder EmbedderClient) {
 	s.embedder = embedder
 }
 
-// LoadFromDirectory loads and splits markdown documents from a local directory using langchaingo
+// embeddingCache is the on-disk JSON structure for cached embeddings.
+type embeddingCache struct {
+	Version int                      `json:"version"`
+	Entries map[string][]float32     `json:"entries"` // contentHash -> embedding
+}
+
+const cacheVersion = 1
+
+// LoadFromDirectory loads and splits markdown documents from a local directory,
+// using a disk cache for embeddings to avoid re-computing on every restart.
 func (s *Service) LoadFromDirectory(dir string) error {
 	loader := documentloaders.NewRecursiveDirLoader(
 		documentloaders.WithRoot(dir),
@@ -89,23 +102,58 @@ func (s *Service) LoadFromDirectory(dir string) error {
 		extractFrontMatter(&docs[i])
 	}
 
-	// Generate embeddings if embedder is available
-	if err := s.indexDocuments(docs); err != nil {
+	// Load embedding cache from disk
+	cachePath := filepath.Join(dir, ".embedding_cache.json")
+	cache := s.loadCache(cachePath)
+
+	// Index documents with cache support
+	if err := s.indexDocumentsCached(docs, cache); err != nil {
 		log.Printf("[rag] warning: failed to generate embeddings, falling back to keyword search: %v", err)
-		// Store without embeddings
 		s.documents = make([]DocumentWithEmbedding, len(docs))
 		for i, doc := range docs {
 			s.documents[i] = DocumentWithEmbedding{Doc: doc}
 		}
+	} else if s.embedder != nil {
+		// Save updated cache
+		s.saveCache(cachePath, cache)
 	}
 
 	s.initialized = true
-	log.Printf("[rag] loaded and split %d document chunks from %s (embeddings: %v)", len(docs), dir, s.embedder != nil)
+	log.Printf("[rag] loaded %d chunks from %s (embeddings: %v)", len(docs), dir, s.HasEmbeddings())
 	return nil
 }
 
-// indexDocuments generates embeddings for all documents
-func (s *Service) indexDocuments(docs []schema.Document) error {
+// contentHash computes a SHA-256 hash of the document content for cache keying.
+func contentHash(content string) string {
+	h := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("%x", h[:8]) // first 16 hex chars is enough
+}
+
+func (s *Service) loadCache(path string) embeddingCache {
+	cache := embeddingCache{Version: cacheVersion, Entries: make(map[string][]float32)}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cache
+	}
+	if err := json.Unmarshal(data, &cache); err != nil || cache.Version != cacheVersion {
+		return embeddingCache{Version: cacheVersion, Entries: make(map[string][]float32)}
+	}
+	return cache
+}
+
+func (s *Service) saveCache(path string, cache embeddingCache) {
+	data, err := json.Marshal(cache)
+	if err != nil {
+		log.Printf("[rag] cache marshal error: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[rag] cache write error: %v", err)
+	}
+}
+
+// indexDocumentsCached generates embeddings only for documents not in the cache.
+func (s *Service) indexDocumentsCached(docs []schema.Document, cache embeddingCache) error {
 	if s.embedder == nil || len(docs) == 0 {
 		s.documents = make([]DocumentWithEmbedding, len(docs))
 		for i, doc := range docs {
@@ -114,29 +162,64 @@ func (s *Service) indexDocuments(docs []schema.Document) error {
 		return nil
 	}
 
-	ctx := context.Background()
-	texts := make([]string, len(docs))
+	// Separate cached vs uncached documents
+	type docEntry struct {
+		index int
+		hash  string
+		doc   schema.Document
+	}
+	var uncached []docEntry
+	results := make([]DocumentWithEmbedding, len(docs))
+
+	cached := 0
 	for i, doc := range docs {
-		texts[i] = doc.PageContent
-	}
-
-	embeddings, err := s.embedder.CreateEmbedding(ctx, texts)
-	if err != nil {
-		return fmt.Errorf("create embeddings: %w", err)
-	}
-
-	if len(embeddings) != len(docs) {
-		return fmt.Errorf("embedding count mismatch: got %d, want %d", len(embeddings), len(docs))
-	}
-
-	s.documents = make([]DocumentWithEmbedding, len(docs))
-	for i, doc := range docs {
-		s.documents[i] = DocumentWithEmbedding{
-			Doc:       doc,
-			Embedding: embeddings[i],
+		h := contentHash(doc.PageContent)
+		if emb, ok := cache.Entries[h]; ok && len(emb) > 0 {
+			results[i] = DocumentWithEmbedding{Doc: doc, Embedding: emb}
+			cached++
+		} else {
+			uncached = append(uncached, docEntry{index: i, hash: h, doc: doc})
 		}
 	}
 
+	if len(uncached) == 0 {
+		log.Printf("[rag] all %d chunks loaded from embedding cache", len(docs))
+		s.documents = results
+		return nil
+	}
+
+	log.Printf("[rag] %d cached, %d need embedding generation", cached, len(uncached))
+
+	// Generate embeddings for uncached documents (batch in groups of 20)
+	batchSize := 20
+	for start := 0; start < len(uncached); start += batchSize {
+		end := start + batchSize
+		if end > len(uncached) {
+			end = len(uncached)
+		}
+		batch := uncached[start:end]
+
+		texts := make([]string, len(batch))
+		for i, entry := range batch {
+			texts[i] = entry.doc.PageContent
+		}
+
+		embeddings, err := s.embedder.CreateEmbedding(context.Background(), texts)
+		if err != nil {
+			return fmt.Errorf("batch embedding (%d-%d): %w", start, end, err)
+		}
+
+		for i, entry := range batch {
+			if i < len(embeddings) {
+				results[entry.index] = DocumentWithEmbedding{Doc: entry.doc, Embedding: embeddings[i]}
+				cache.Entries[entry.hash] = embeddings[i]
+			}
+		}
+
+		log.Printf("[rag] embedded %d/%d chunks", end, len(uncached))
+	}
+
+	s.documents = results
 	return nil
 }
 

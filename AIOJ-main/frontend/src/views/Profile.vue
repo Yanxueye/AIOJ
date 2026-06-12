@@ -88,6 +88,9 @@
           :algorithm-data="profile.solvedByAlgorithm || {}"
         />
 
+        <!-- Rating History -->
+        <RatingHistoryChart :history="ratingHistory" :loading="ratingLoading" />
+
         <!-- Favorites -->
         <div class="card section-card">
           <div class="section-title">收藏题目</div>
@@ -153,9 +156,11 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { userApi } from '@/api/user'
 import { ElMessage } from 'element-plus'
 import StatsCharts from '@/components/StatsCharts.vue'
 import ContributionHeatmap from '@/components/ContributionHeatmap.vue'
+import RatingHistoryChart from '@/components/RatingHistoryChart.vue'
 
 const userStore = useUserStore()
 
@@ -164,6 +169,8 @@ const profile = ref(null)
 const editDialogVisible = ref(false)
 const saving = ref(false)
 const editForm = reactive({ username: '', email: '', bio: '' })
+const ratingHistory = ref([])
+const ratingLoading = ref(false)
 
 onMounted(async () => {
   try {
@@ -173,6 +180,16 @@ onMounted(async () => {
     editForm.bio = profile.value.bio || ''
   } finally {
     loading.value = false
+  }
+  // Fetch rating history
+  ratingLoading.value = true
+  try {
+    const res = await userApi.getRatingHistory()
+    ratingHistory.value = res.data?.history || []
+  } catch {
+    ratingHistory.value = []
+  } finally {
+    ratingLoading.value = false
   }
 })
 

@@ -34,6 +34,8 @@ export const useSubmissionStore = defineStore('submission', () => {
     const res = await submissionApi.submit(data)
     currentResult.value = res.data
     if (!res.data?.id || TERMINAL_STATUSES.has(res.data.status)) {
+      // Already terminal — add to list immediately
+      submissions.value = [res.data, ...submissions.value]
       return res.data
     }
     let finalResult = null
@@ -43,6 +45,10 @@ export const useSubmissionStore = defineStore('submission', () => {
       finalResult = await waitForResult(res.data.id, res.data.traceId)
     }
     currentResult.value = finalResult
+    // Add completed submission to the top of the list
+    if (finalResult) {
+      submissions.value = [finalResult, ...submissions.value.filter(s => s.id !== finalResult.id)]
+    }
     return finalResult
   }
 
@@ -61,10 +67,10 @@ export const useSubmissionStore = defineStore('submission', () => {
     return res.data
   }
 
-  async function waitForResult(id, traceId = '', maxAttempts = 20, intervalMs = 800) {
+  async function waitForResult(id, traceId = '', maxAttempts = 120, intervalMs = 500) {
     let latest = null
     for (let i = 0; i < maxAttempts; i++) {
-      await new Promise(resolve => setTimeout(resolve, i === 0 ? 300 : intervalMs))
+      await new Promise(resolve => setTimeout(resolve, i === 0 ? 200 : intervalMs))
       try {
         latest = await getDetail(id)
       } catch (error) {
@@ -75,6 +81,10 @@ export const useSubmissionStore = defineStore('submission', () => {
       }
       if (traceId && latest?.traceId && latest.traceId !== traceId) {
         continue
+      }
+      // Update currentResult on each poll so UI shows live status
+      if (latest) {
+        currentResult.value = latest
       }
       if (TERMINAL_STATUSES.has(latest?.status)) {
         return latest

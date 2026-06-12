@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,28 +37,6 @@ type runReq struct {
 	CustomInput string `json:"customInput"`
 }
 
-var (
-	idCounter uint64 = 100000
-	idOnce    sync.Once
-)
-
-func (h *SubmissionHandler) nextSubmissionID() (uint64, error) {
-	var initErr error
-	idOnce.Do(func() {
-		var maxID uint64
-		if err := h.DB.Model(&models.Submission{}).Select("COALESCE(MAX(id), 100000)").Scan(&maxID).Error; err != nil {
-			initErr = err
-			return
-		}
-		if maxID > atomic.LoadUint64(&idCounter) {
-			atomic.StoreUint64(&idCounter, maxID)
-		}
-	})
-	if initErr != nil {
-		return 0, initErr
-	}
-	return atomic.AddUint64(&idCounter, 1), nil
-}
 
 func (h *SubmissionHandler) Submit(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
@@ -75,16 +52,31 @@ func (h *SubmissionHandler) Submit(c *gin.Context) {
 		return
 	}
 
-	submissionID, err := h.nextSubmissionID()
-	if err != nil {
-		utils.Server(c, "生成提交编号失败: "+err.Error())
+	now := time.Now().UTC()
+
+	// Create submission record directly — let DB auto-increment handle the ID
+	sub := &models.Submission{
+		UserID:         uid,
+		ProblemID:      problem.ID,
+		ProblemTitle:   problem.Title,
+		Source:         "submit",
+		Language:       normalizedLang,
+		Code:           code,
+		CodeLength:     len(code),
+		Status:         models.StatusPending,
+		QueueStartedAt: &now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := h.DB.Create(sub).Error; err != nil {
+		utils.Server(c, "创建提交记录失败: "+err.Error())
 		return
 	}
-	now := time.Now().UTC()
-	traceID := fmt.Sprintf("judge-%d-%d", problem.ID, submissionID)
+
+	traceID := fmt.Sprintf("judge-%d-%d", problem.ID, sub.ID)
 
 	task := &mq.SubmitTask{
-		SubmissionID: submissionID,
+		SubmissionID: sub.ID,
 		UserID:       uid,
 		ProblemID:    problem.ID,
 		ProblemTitle: problem.Title,
@@ -103,7 +95,7 @@ func (h *SubmissionHandler) Submit(c *gin.Context) {
 	}
 
 	utils.OK(c, gin.H{
-		"id":            submissionID,
+		"id":            sub.ID,
 		"problemId":     problem.ID,
 		"problemTitle":  problem.Title,
 		"traceId":       traceID,
@@ -205,13 +197,15 @@ func (h *SubmissionHandler) List(c *gin.Context) {
 	}
 	switch c.DefaultQuery("sortBy", "time") {
 	case "problemId":
-		q = q.Order("problem_id ASC, id DESC")
+		q = q.Order("problem_id ASC, created_at DESC")
 	default:
-		q = q.Order("id DESC")
+		q = q.Order("created_at DESC")
 	}
 
 	var total int64
-	q.Count(&total)
+	if err := q.Count(&total).Error; err != nil {
+		log.Printf("[submission] list count query failed: %v", err)
+	}
 
 	var rows []models.Submission
 	if err := q.Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
@@ -221,7 +215,7 @@ func (h *SubmissionHandler) List(c *gin.Context) {
 
 	list := make([]gin.H, 0, len(rows))
 	for i := range rows {
-		list = append(list, submissionView(&rows[i], false))
+		list = append(list, submissionView(&rows[i], false, false)) // No code or cases in list
 	}
 	utils.OK(c, gin.H{"list": list, "total": total})
 }
@@ -241,7 +235,7 @@ func (h *SubmissionHandler) Detail(c *gin.Context) {
 		utils.NotFound(c, "提交不存在")
 		return
 	}
-	utils.OK(c, submissionView(&s, true))
+	utils.OK(c, submissionView(&s, true, true)) // Detail: include code + cases
 }
 
 func (h *SubmissionHandler) Cases(c *gin.Context) {
@@ -346,9 +340,10 @@ func (h *SubmissionHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	ticker := time.NewTicker(700 * time.Millisecond)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	lastPayload := ""
+	notFoundCount := 0
 
 	for {
 		select {
@@ -359,11 +354,17 @@ func (h *SubmissionHandler) Stream(c *gin.Context) {
 			if err := h.DB.Preload("CaseResults", func(db *gorm.DB) *gorm.DB {
 				return db.Order("case_no ASC")
 			}).Where("id = ? AND user_id = ?", id, uid).First(&s).Error; err != nil {
-				fmt.Fprintf(w, "event: error\ndata: {\"message\":\"submission not found\"}\n\n")
-				flusher.Flush()
-				return
+				// Submission might not exist yet (worker hasn't created it) — retry
+				notFoundCount++
+				if notFoundCount > 30 { // ~15s timeout
+					fmt.Fprintf(w, "event: error\ndata: {\"message\":\"submission not found\"}\n\n")
+					flusher.Flush()
+					return
+				}
+				continue
 			}
-			payloadMap := submissionView(&s, true)
+			notFoundCount = 0
+			payloadMap := submissionView(&s, false, true) // SSE: cases only, no code (save bandwidth)
 			payloadBytes, _ := json.Marshal(payloadMap)
 			payload := string(payloadBytes)
 			if payload == lastPayload {
@@ -402,7 +403,7 @@ func (h *SubmissionHandler) validateSourceInput(c *gin.Context, problemID uint64
 	return &problem, normalizedLang, code, true
 }
 
-func submissionView(s *models.Submission, withCases bool) gin.H {
+func submissionView(s *models.Submission, withCode bool, withCaseResults bool) gin.H {
 	view := gin.H{
 		"id":            s.ID,
 		"problemId":     s.ProblemID,
@@ -411,7 +412,6 @@ func submissionView(s *models.Submission, withCases bool) gin.H {
 		"source":        defaultSource(s.Source),
 		"status":        s.Status,
 		"language":      s.Language,
-		"code":          s.Code,
 		"runtime":       s.Runtime,
 		"runtimeMs":     s.RuntimeMS,
 		"memory":        s.Memory,
@@ -422,6 +422,9 @@ func submissionView(s *models.Submission, withCases bool) gin.H {
 		"updatedAt":     s.UpdatedAt.UTC().Format("2006-01-02T15:04:05.000Z"),
 		"codeLength":    s.CodeLength,
 	}
+	if withCode {
+		view["code"] = s.Code
+	}
 	if s.QueueStartedAt != nil {
 		view["queueStartedAt"] = s.QueueStartedAt.UTC().Format("2006-01-02T15:04:05.000Z")
 	}
@@ -431,7 +434,7 @@ func submissionView(s *models.Submission, withCases bool) gin.H {
 	if s.FinishedAt != nil {
 		view["finishedAt"] = s.FinishedAt.UTC().Format("2006-01-02T15:04:05.000Z")
 	}
-	if withCases {
+	if withCaseResults {
 		view["caseResults"] = buildModelCaseViews(s.CaseResults)
 	}
 	return view
@@ -467,6 +470,8 @@ func buildModelCaseViews(items []models.SubmissionCaseResult) []gin.H {
 			"stdoutBytes":   item.StdoutBytes,
 			"stderrBytes":   item.StderrBytes,
 			"signal":        item.Signal,
+			"input":         item.Input,
+			"expected":      item.Expected,
 			"stdoutPreview": item.StdoutPreview,
 			"stderrPreview": item.StderrPreview,
 		})

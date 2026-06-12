@@ -63,6 +63,8 @@ onMounted(async () => {
   try {
     const res = await studyPlanApi.getDetail(route.params.id)
     plan.value = res.data
+  } catch (e) {
+    plan.value = null
   } finally {
     loading.value = false
   }

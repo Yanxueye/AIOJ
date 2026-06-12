@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/terminaloj/backend/internal/models"
 	"github.com/terminaloj/backend/internal/utils"
+	"gorm.io/gorm"
 )
 
 const (
@@ -14,21 +15,31 @@ const (
 	ctxUserRole = "x-user-role"
 )
 
-// JWTAuth verifies the Authorization header and stashes the user in the gin
-// context. Requests without a valid token are short-circuited with 401.
+// JWTAuth verifies the Authorization header (or ?token= query parameter as
+// fallback for SSE/EventSource which cannot set custom headers) and stashes
+// the user in the gin context.
 func JWTAuth(mgr *utils.JWTManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		header := c.GetHeader("Authorization")
-		if header == "" {
-			utils.Unauthorized(c, "missing authorization header")
+		var tokenStr string
+
+		if header := c.GetHeader("Authorization"); header != "" {
+			parts := strings.SplitN(header, " ", 2)
+			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+				utils.Unauthorized(c, "invalid authorization format")
+				return
+			}
+			tokenStr = strings.TrimSpace(parts[1])
+		} else {
+			// Fallback: accept token from query parameter (for EventSource/SSE)
+			tokenStr = c.Query("token")
+		}
+
+		if tokenStr == "" {
+			utils.Unauthorized(c, "missing authorization token")
 			return
 		}
-		parts := strings.SplitN(header, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			utils.Unauthorized(c, "invalid authorization format")
-			return
-		}
-		claims, err := mgr.Parse(strings.TrimSpace(parts[1]))
+
+		claims, err := mgr.Parse(tokenStr)
 		if err != nil {
 			utils.Unauthorized(c, "invalid or expired token")
 			return
@@ -82,6 +93,30 @@ func RequireAdmin() gin.HandlerFunc {
 			utils.Forbidden(c, "admin role required")
 			return
 		}
+		c.Next()
+	}
+}
+
+// RequireAdminDB verifies admin role by querying the database directly,
+// preventing stale JWT claims from granting access after role demotion.
+func RequireAdminDB(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid, ok := CurrentUserID(c)
+		if !ok {
+			utils.Unauthorized(c, "not authenticated")
+			return
+		}
+		var user models.User
+		if err := db.Select("role").First(&user, uid).Error; err != nil {
+			utils.Unauthorized(c, "user not found")
+			return
+		}
+		if user.Role != models.RoleAdmin {
+			utils.Forbidden(c, "admin role required")
+			return
+		}
+		// Update context with fresh role
+		c.Set(ctxUserRole, user.Role)
 		c.Next()
 	}
 }

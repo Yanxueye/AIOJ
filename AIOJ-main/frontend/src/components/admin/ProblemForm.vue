@@ -22,7 +22,26 @@
       </el-form-item>
 
       <el-form-item label="标签">
-        <el-input v-model="tagsText" placeholder="用英文逗号分隔，例如：数组,哈希表" />
+        <el-select
+          v-model="form.tags"
+          multiple
+          filterable
+          placeholder="选择算法标签"
+          style="width: 100%"
+        >
+          <el-option-group
+            v-for="group in tagGroups"
+            :key="group.category"
+            :label="group.category"
+          >
+            <el-option
+              v-for="t in group.tags"
+              :key="t.name"
+              :label="t.name"
+              :value="t.name"
+            />
+          </el-option-group>
+        </el-select>
       </el-form-item>
 
       <el-form-item label="题目来源">
@@ -126,7 +145,8 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref, watch, onMounted } from 'vue'
+import { tagApi } from '@/api/tag'
 
 const props = defineProps({
   initialValue: {
@@ -153,7 +173,17 @@ const props = defineProps({
 
 defineEmits(['submit'])
 
-const tagsText = ref('')
+const tagGroups = ref([])
+
+onMounted(async () => {
+  try {
+    const res = await tagApi.getList()
+    tagGroups.value = res.data?.categories || []
+  } catch {
+    tagGroups.value = []
+  }
+})
+
 const form = reactive(createDefaultForm())
 
 watch(
@@ -163,10 +193,6 @@ watch(
   },
   { immediate: true, deep: true }
 )
-
-watch(tagsText, value => {
-  form.tags = value.split(',').map(item => item.trim()).filter(Boolean)
-})
 
 function createDefaultForm() {
   return {
@@ -211,7 +237,6 @@ function applyForm(value = {}) {
   }
 
   Object.assign(form, merged)
-  tagsText.value = form.tags.join(',')
 }
 
 function normalizeArray(value, fallbackItem) {

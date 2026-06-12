@@ -62,8 +62,11 @@
               <MarkdownRenderer :content="problem.constraints" />
             </section>
             <section v-if="problem?.samples?.length" class="problem-section">
-              <div class="section-title">示例</div>
-              <div class="sample-list">
+              <div class="section-title section-row" @click="samplesCollapsed = !samplesCollapsed" style="cursor: pointer; user-select: none">
+                <span>示例</span>
+                <el-icon class="collapse-arrow" :class="{ rotated: samplesCollapsed }"><ArrowDown /></el-icon>
+              </div>
+              <div v-show="!samplesCollapsed" class="sample-list">
                 <div v-for="item in problem.samples" :key="item.caseNo" class="sample-card">
                   <div class="sample-head">示例 {{ item.caseNo }}</div>
                   <div class="sample-grid">
@@ -182,11 +185,11 @@
           <template v-else-if="resultView">
             <div class="result-view">
               <!-- Status banner -->
-              <div class="result-status-banner" :class="resultView.status === 'Accepted' ? 'banner-accepted' : 'banner-error'">
+              <div class="result-status-banner" :class="getBannerClass(resultView.status)">
                 <div class="banner-status">
-                  <span class="banner-status-text">{{ resultView.status === 'Accepted' ? 'Accepted' : resultView.status }}</span>
+                  <span class="banner-status-text">{{ resultView.status }}</span>
                   <span v-if="resultView.status === 'Accepted'" class="banner-check">✓</span>
-                  <span v-else class="banner-x">✗</span>
+                  <span v-else-if="['Pending', 'Queueing', 'Compiling', 'Running'].includes(resultView.status)" class="banner-spinner" />
                 </div>
                 <div class="banner-stats">
                   <div class="banner-stat">
@@ -223,7 +226,7 @@
 
               <!-- Failed case details -->
               <div v-if="failedCases.length" class="result-cases-section">
-                <div class="cases-title">失败的测试用例</div>
+                <div class="cases-title">未通过的测试用例</div>
                 <div v-for="item in failedCases" :key="item.caseNo" class="case-card">
                   <div class="case-header">
                     <span>测试用例 {{ item.caseNo }}</span>
@@ -234,16 +237,18 @@
                       <div class="case-field-label">输入</div>
                       <pre class="case-field-value">{{ getCaseInput(item) }}</pre>
                     </div>
-                    <div class="case-field">
-                      <div class="case-field-label">预期输出</div>
-                      <pre class="case-field-value">{{ getCaseExpected(item) }}</pre>
-                    </div>
-                    <div v-if="item.stdoutPreview" class="case-field">
-                      <div class="case-field-label">你的输出</div>
-                      <pre class="case-field-value">{{ item.stdoutPreview }}</pre>
+                    <div class="case-compare">
+                      <div class="case-field">
+                        <div class="case-field-label expected-label">预期输出</div>
+                        <pre class="case-field-value expected-value">{{ getCaseExpected(item) }}</pre>
+                      </div>
+                      <div class="case-field">
+                        <div class="case-field-label actual-label">实际输出</div>
+                        <pre class="case-field-value actual-value">{{ item.stdoutPreview || '(无输出)' }}</pre>
+                      </div>
                     </div>
                     <div v-if="item.stderrPreview" class="case-field">
-                      <div class="case-field-label">错误输出</div>
+                      <div class="case-field-label">错误信息</div>
                       <pre class="case-field-value error-text">{{ item.stderrPreview }}</pre>
                     </div>
                   </div>
@@ -304,92 +309,93 @@
           />
         </div>
 
-        <!-- Test Case Panel (LeetCode style) -->
-        <div class="testcase-panel">
-          <!-- Collapsed state: minimal bar -->
-          <div v-if="testcaseCollapsed" class="testcase-collapsed-bar" @click="testcaseCollapsed = false">
-            <div class="collapsed-left">
-              <span class="collapsed-label">测试用例</span>
-              <span class="collapsed-hint">{{ testCases[activeCaseIdx]?.label || '' }}</span>
+        <!-- Test Case Panel -->
+        <div class="testcase-panel" :style="{ height: testcasePanelHeight + 'px' }">
+          <!-- Resizable divider -->
+          <div class="panel-resize-handle" @mousedown.prevent="startTestcaseResize">
+            <div class="resize-dots" />
+          </div>
+
+          <!-- Header -->
+          <div class="testcase-header">
+            <div class="testcase-header-left">
+              <div class="testcase-tabs">
+                <button
+                  v-for="(tc, idx) in testCases"
+                  :key="idx"
+                  :class="['tc-tab', { active: activeCaseIdx === idx }]"
+                  @click="activeCaseIdx = idx"
+                >{{ tc.label }}</button>
+                <button class="tc-tab tc-add" @click="addTestCase" title="添加测试用例">+</button>
+              </div>
             </div>
-            <div class="collapsed-right">
-              <el-button type="primary" size="small" :loading="running" @click.stop="runCurrentCase">
+            <div class="testcase-header-right">
+              <el-button type="primary" size="small" :loading="running" @click="runCurrentCase" class="run-btn">
                 <el-icon><VideoPlay /></el-icon>运行
               </el-button>
-              <el-icon class="expand-icon"><ArrowUp /></el-icon>
+              <div class="collapse-btn" @click="testcaseCollapsed = true" title="收起">
+                <el-icon><ArrowDown /></el-icon>
+              </div>
             </div>
           </div>
 
-          <!-- Expanded state -->
-          <template v-else>
-            <div class="testcase-header">
-              <div class="testcase-header-left">
-                <div class="testcase-tabs">
-                  <button
-                    v-for="(tc, idx) in testCases"
-                    :key="idx"
-                    :class="['tc-tab', { active: activeCaseIdx === idx }]"
-                    @click="activeCaseIdx = idx"
-                  >{{ tc.label }}</button>
-                  <button class="tc-tab tc-add" @click="addTestCase">+</button>
-                </div>
-              </div>
-              <div class="testcase-header-right">
-                <el-button type="primary" size="small" :loading="running" @click="runCurrentCase">
-                  <el-icon><VideoPlay /></el-icon>运行
-                </el-button>
-                <div class="collapse-btn" @click="testcaseCollapsed = true">
-                  <el-icon><ArrowDown /></el-icon>
-                </div>
-              </div>
+          <!-- Body -->
+          <div v-if="!testcaseCollapsed" class="testcase-body">
+            <div class="tc-section">
+              <div class="tc-label">输入</div>
+              <textarea
+                v-model="testCases[activeCaseIdx].input"
+                class="tc-textarea"
+                rows="3"
+                spellcheck="false"
+                placeholder="输入测试数据..."
+              />
             </div>
-            <div class="testcase-body">
-              <div class="tc-section">
-                <div class="tc-label">输入</div>
-                <textarea
-                  v-model="testCases[activeCaseIdx].input"
-                  class="tc-textarea"
-                  rows="3"
-                  spellcheck="false"
-                />
+            <div v-if="testCases[activeCaseIdx].expected !== undefined" class="tc-section">
+              <div class="tc-label">
+                预期输出
+                <button class="tc-toggle" @click="toggleExpected">隐藏</button>
               </div>
-              <div v-if="testCases[activeCaseIdx].expected !== undefined" class="tc-section">
-                <div class="tc-label">
-                  预期输出
-                  <button class="tc-toggle" @click="toggleExpected">隐藏</button>
-                </div>
-                <textarea
-                  v-model="testCases[activeCaseIdx].expected"
-                  class="tc-textarea"
-                  rows="2"
-                  spellcheck="false"
-                />
-              </div>
-              <div v-else>
-                <button class="tc-toggle" @click="toggleExpected">+ 添加预期输出</button>
-              </div>
+              <textarea
+                v-model="testCases[activeCaseIdx].expected"
+                class="tc-textarea"
+                rows="2"
+                spellcheck="false"
+                placeholder="预期输出（可选）"
+              />
+            </div>
+            <div v-else>
+              <button class="tc-toggle" @click="toggleExpected">+ 添加预期输出</button>
+            </div>
 
-              <!-- Run result inline -->
-              <div v-if="resultView && resultView.source === 'run'" class="tc-run-result">
-                <div class="tc-run-header">
-                  <span :class="statusTextClass(resultView.status)">{{ resultView.status }}</span>
-                  <span class="tc-run-stats">{{ displayRuntime(resultView) }} | {{ displayMemory(resultView) }}</span>
-                </div>
-                <div v-if="resultView.stdout" class="tc-run-output">
-                  <div class="tc-label">输出</div>
-                  <pre class="tc-pre">{{ resultView.stdout }}</pre>
-                </div>
-                <div v-if="resultView.stderr" class="tc-run-output">
-                  <div class="tc-label">错误</div>
-                  <pre class="tc-pre error-text">{{ resultView.stderr }}</pre>
-                </div>
-                <div v-if="resultView.compileOutput" class="tc-run-output">
-                  <div class="tc-label">编译输出</div>
-                  <pre class="tc-pre">{{ resultView.compileOutput }}</pre>
-                </div>
+            <!-- Run result inline -->
+            <div v-if="resultView && resultView.source === 'run'" class="tc-run-result">
+              <div class="tc-run-header">
+                <span class="tc-run-status" :class="statusBadgeClass(resultView.status)">
+                  {{ resultView.status }}
+                </span>
+                <span class="tc-run-stats">{{ displayRuntime(resultView) }} | {{ displayMemory(resultView) }}</span>
+              </div>
+              <div v-if="resultView.stdout" class="tc-run-output">
+                <div class="tc-label">输出</div>
+                <pre class="tc-pre">{{ resultView.stdout }}</pre>
+              </div>
+              <div v-if="resultView.stderr" class="tc-run-output">
+                <div class="tc-label">错误</div>
+                <pre class="tc-pre error-text">{{ resultView.stderr }}</pre>
+              </div>
+              <div v-if="resultView.compileOutput" class="tc-run-output">
+                <div class="tc-label">编译输出</div>
+                <pre class="tc-pre">{{ resultView.compileOutput }}</pre>
               </div>
             </div>
-          </template>
+          </div>
+
+          <!-- Collapsed state -->
+          <div v-else class="testcase-collapsed" @click="testcaseCollapsed = false">
+            <span class="collapsed-hint">点击展开测试用例</span>
+            <el-icon class="expand-icon"><ArrowUp /></el-icon>
+          </div>
         </div>
       </div>
     </div>
@@ -463,6 +469,51 @@ const chatInput = ref('')
 const chatLoading = ref(false)
 const chatMessagesRef = ref(null)
 const testcaseCollapsed = ref(false)
+const samplesCollapsed = ref(false)
+const testcasePanelHeight = ref(260)
+let testcaseResizeState = null
+
+function startTestcaseResize(e) {
+  e.preventDefault()
+  const panelRight = document.querySelector('.panel-right')
+  const maxH = panelRight ? panelRight.clientHeight - 100 : 600
+  testcaseResizeState = { startY: e.clientY, startHeight: testcasePanelHeight.value, maxH }
+  document.addEventListener('mousemove', onTestcaseResize)
+  document.addEventListener('mouseup', stopTestcaseResize)
+}
+function onTestcaseResize(e) {
+  if (!testcaseResizeState) return
+  const dy = testcaseResizeState.startY - e.clientY
+  const newH = testcaseResizeState.startHeight + dy
+  if (newH < 60) {
+    testcasePanelHeight.value = 120
+    testcaseCollapsed.value = true
+    stopTestcaseResize()
+    return
+  }
+  testcasePanelHeight.value = Math.max(120, Math.min(testcaseResizeState.maxH, newH))
+}
+function stopTestcaseResize() {
+  testcaseResizeState = null
+  document.removeEventListener('mousemove', onTestcaseResize)
+  document.removeEventListener('mouseup', stopTestcaseResize)
+}
+
+const bannerClassMap = { Accepted: 'banner-accepted', Pending: 'banner-pending', Queueing: 'banner-pending', Compiling: 'banner-pending', Running: 'banner-pending' }
+function getBannerClass(status) { return bannerClassMap[status] || 'banner-error' }
+
+function statusBadgeClass(status) {
+  if (status === 'Accepted') return 'badge-accepted'
+  if (['Wrong Answer', 'Runtime Error'].includes(status)) return 'badge-error'
+  if (status === 'Compile Error') return 'badge-ce'
+  if (status === 'Time Limit Exceeded') return 'badge-tle'
+  if (status === 'Memory Limit Exceeded') return 'badge-mle'
+  if (status === 'Output Limit Exceeded') return 'badge-ole'
+  if (status === 'System Error') return 'badge-system'
+  if (['Pending', 'Queueing'].includes(status)) return 'badge-pending'
+  if (['Compiling', 'Running'].includes(status)) return 'badge-running'
+  return 'badge-default'
+}
 
 const templateMap = computed(() => {
   const entries = Array.isArray(problem.value?.templates) ? problem.value.templates : []
@@ -504,15 +555,15 @@ function loadSamples() {
 // Failed cases for result view
 const failedCases = computed(() => {
   if (!resultView.value?.caseResults?.length) return []
-  return resultView.value.caseResults.filter(c => c.status !== 'Accepted')
+  // Show only the first failed case (LeetCode-style)
+  const first = resultView.value.caseResults.find(c => c.status !== 'Accepted')
+  return first ? [first] : []
 })
 function getCaseInput(item) {
-  const tc = problem.value?.samples?.[item.caseNo - 1]
-  return tc?.input || '(隐藏用例)'
+  return item.input || problem.value?.samples?.[item.caseNo - 1]?.input || '(隐藏用例)'
 }
 function getCaseExpected(item) {
-  const tc = problem.value?.samples?.[item.caseNo - 1]
-  return tc?.expected || '(隐藏用例)'
+  return item.expected || problem.value?.samples?.[item.caseNo - 1]?.expected || '(隐藏用例)'
 }
 
 const draftNamespace = computed(() => userStore.userInfo?.id ? `user-${userStore.userInfo.id}` : 'guest')
@@ -547,6 +598,8 @@ function statusIconClass(status) {
   if (['Compile Error'].includes(status)) return 'icon-ce'
   if (['Time Limit Exceeded'].includes(status)) return 'icon-tle'
   if (['Memory Limit Exceeded'].includes(status)) return 'icon-mle'
+  if (['Output Limit Exceeded'].includes(status)) return 'icon-ole'
+  if (['System Error'].includes(status)) return 'icon-system'
   return 'icon-pending'
 }
 function statusTextClass(status) {
@@ -599,13 +652,17 @@ async function handleSubmit() {
   const codeVal = code.value || codeEditorRef.value?.getCode()
   if (!codeVal?.trim()) { ElMessage.warning('请先输入代码'); return }
   submitting.value = true
-  resultView.value = null
   aiAnalysis.value = ''
+  // Show pending state immediately
+  resultView.value = { status: 'Pending', source: 'submit', language: language.value }
   try {
     const result = await submissionStore.submit({ problemId: problem.value.id, language: language.value, code: codeVal })
-    const hydrated = await hydrateSubmissionResult(result)
-    if (hydrated.status === 'Accepted') ElMessage.success('通过')
-    else ElMessage.warning(`评测结果: ${hydrated.status}`)
+    // Update result view with each intermediate status during polling
+    if (result) {
+      const hydrated = await hydrateSubmissionResult(result)
+      if (hydrated.status === 'Accepted') ElMessage.success('通过')
+      else ElMessage.warning(`评测结果: ${hydrated.status}`)
+    }
     await loadRecentSubmissions()
   } catch { ElMessage.error('提交失败') }
   finally { submitting.value = false }
@@ -676,13 +733,18 @@ async function fetchAIAnalysis() {
   if (!resultView.value || !code.value) return
   aiAnalysisLoading.value = true; aiAnalysis.value = ''
   try {
-    if (resultView.value.status === 'Accepted') {
-      const res = await aiApi.solveProblem({ problemId: problem.value.id, question: '请分析以下通过的代码，给出：1) 代码风格评价 2) 时间复杂度 3) 空间复杂度 4) 使用的知识点 vs 题目考察的知识点 5) 优化方向', level: 'explain' })
-      aiAnalysis.value = res.data?.answer || '暂时无法提供分析'
-    } else {
-      const res = await aiApi.diagnoseCode({ problemId: problem.value.id, language: language.value, code: code.value, judgeStatus: resultView.value.status, errorMessage: resultView.value.errorMessage || resultView.value.compileOutput || '' })
-      aiAnalysis.value = res.data?.rawMarkdown || res.data?.summary || '暂时无法提供分析'
+    const rv = resultView.value
+    const payload = {
+      problemId: problem.value.id,
+      language: language.value,
+      code: code.value,
+      judgeStatus: rv.status,
+      errorMessage: rv.errorMessage || rv.compileOutput || '',
+      runtimeMs: rv.runtimeMs ?? rv.runtime ?? 0,
+      memoryKb: rv.memoryKb ?? 0
     }
+    const res = await aiApi.diagnoseCode(payload)
+    aiAnalysis.value = res.data?.rawMarkdown || res.data?.summary || '暂时无法提供分析'
   } catch { aiAnalysis.value = 'AI 分析暂时不可用' }
   finally { aiAnalysisLoading.value = false }
 }
@@ -704,6 +766,13 @@ async function sendCodeContext() {
   sendChat()
 }
 
+// Sync submission status updates to resultView during active submission
+watch(() => submissionStore.currentResult, (newResult) => {
+  if (submitting.value && newResult && resultView.value?.source === 'submit') {
+    resultView.value = { ...resultView.value, ...newResult, source: 'submit' }
+  }
+}, { deep: true })
+
 watch(() => route.params.id, async () => {
   language.value = 'cpp'; code.value = ''; resultView.value = null; leftTab.value = 'description'
   await problemStore.fetchProblem(route.params.id); loadSamples(); await loadRecentSubmissions()
@@ -714,7 +783,7 @@ onBeforeUnmount(() => { stopResize() })
 
 <style scoped>
 /* Layout */
-.problem-detail-page { height: 100vh; display: flex; flex-direction: column; background: var(--bg-primary); }
+.problem-detail-page { height: calc(100vh - 60px); display: flex; flex-direction: column; background: var(--bg-primary); }
 .detail-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 0 16px; height: 46px; background: var(--bg-card); border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; }
 .problem-id { font-family: 'SF Mono', 'Cascadia Code', monospace; color: var(--text-muted); font-size: 13px; }
@@ -754,6 +823,9 @@ onBeforeUnmount(() => { stopResize() })
 .panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
 .problem-section + .problem-section { margin-top: 24px; }
 .section-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.section-row { display: flex; align-items: center; justify-content: space-between; }
+.collapse-arrow { font-size: 14px; color: var(--text-muted); transition: transform 0.2s; }
+.collapse-arrow.rotated { transform: rotate(-90deg); }
 .section-row { display: flex; align-items: center; justify-content: space-between; }
 .panel-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 
@@ -800,13 +872,22 @@ onBeforeUnmount(() => { stopResize() })
 .result-view { display: flex; flex-direction: column; gap: 16px; }
 .result-status-banner { border-radius: 10px; padding: 20px; }
 .banner-accepted { background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 1px solid #86efac; }
+.banner-pending { background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fcd34d; }
 .banner-error { background: linear-gradient(135deg, #fef2f2, #fee2e2); border: 1px solid #fca5a5; }
 [data-theme="dark"] .banner-accepted { background: linear-gradient(135deg, #052e16, #14532d); border-color: #16a34a; }
+[data-theme="dark"] .banner-pending { background: linear-gradient(135deg, #451a03, #78350f); border-color: #d97706; }
 [data-theme="dark"] .banner-error { background: linear-gradient(135deg, #450a0a, #7f1d1d); border-color: #dc2626; }
 .banner-status { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .banner-status-text { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
 .banner-check { font-size: 24px; color: var(--accent-green); }
-.banner-x { font-size: 24px; color: var(--accent-red); }
+.banner-spinner {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border: 2.5px solid #d97706;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .banner-stats { display: flex; gap: 28px; }
 .banner-stat { display: flex; flex-direction: column; gap: 2px; }
 .banner-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -828,7 +909,15 @@ onBeforeUnmount(() => { stopResize() })
 .case-field { display: flex; flex-direction: column; gap: 4px; }
 .case-field-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .case-field-value { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.5; font-family: 'SF Mono', 'Cascadia Code', monospace; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; padding: 8px 10px; }
+.case-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.expected-label { color: var(--accent-green); }
+.actual-label { color: var(--accent-red); }
+.expected-value { border-color: var(--accent-green); background: #f0fdf4; }
+.actual-value { border-color: var(--accent-red); background: #fef2f2; }
+[data-theme="dark"] .expected-value { background: #052e16; border-color: #16a34a; }
+[data-theme="dark"] .actual-value { background: #450a0a; border-color: #dc2626; }
 .case-meta { display: flex; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--border-light); font-size: 11px; color: var(--text-muted); }
+@media (max-width: 600px) { .case-compare { grid-template-columns: 1fr; } }
 
 /* AI section */
 .result-ai-section { border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; background: var(--bg-hover); }
@@ -845,83 +934,125 @@ onBeforeUnmount(() => { stopResize() })
 /* Editor area */
 .editor-area { flex: 1; overflow: hidden; min-height: 200px; }
 
-/* Test case panel (LeetCode style) */
-.testcase-panel { flex-shrink: 0; }
-
-/* Collapsed bar */
-.testcase-collapsed-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 14px; height: 40px;
-  background: #282828; border-top: 1px solid #3c3c3c;
-  cursor: pointer; user-select: none;
-  transition: background 0.15s;
+/* Test case panel */
+.testcase-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-top: 1px solid #e8e8e8;
+  position: relative;
 }
-.testcase-collapsed-bar:hover { background: #2f2f2f; }
-.collapsed-left { display: flex; align-items: center; gap: 10px; }
-.collapsed-label { font-size: 13px; font-weight: 600; color: #e5e5e5; }
-.collapsed-hint { font-size: 12px; color: #888; }
-.collapsed-right { display: flex; align-items: center; gap: 8px; }
-.expand-icon { color: #888; font-size: 14px; }
 
-/* Expanded header */
+/* Resize handle */
+.panel-resize-handle {
+  height: 5px;
+  cursor: row-resize;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.panel-resize-handle:hover { background: #1a73e8; }
+.panel-resize-handle:hover .resize-dots { opacity: 1; }
+.resize-dots {
+  width: 24px; height: 3px;
+  background: repeating-linear-gradient(90deg, #ccc 0px, #ccc 2px, transparent 2px, transparent 5px);
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+/* Header */
 .testcase-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 14px; height: 42px;
-  background: #1e1e1e; border-top: 1px solid #3c3c3c;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
   user-select: none;
+  flex-shrink: 0;
 }
 .testcase-header-left { display: flex; align-items: center; flex: 1; min-width: 0; }
 .testcase-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .testcase-tabs { display: flex; gap: 0; overflow-x: auto; }
 .tc-tab {
   border: none; background: transparent;
-  color: #888; padding: 10px 14px;
+  color: #666; padding: 10px 14px;
   font-size: 13px; cursor: pointer;
   white-space: nowrap; transition: all 0.12s;
   border-bottom: 2px solid transparent;
-  position: relative;
 }
-.tc-tab:hover { color: #ccc; background: rgba(255,255,255,0.04); }
-.tc-tab.active { color: #fff; font-weight: 600; border-bottom-color: #1a73e8; background: rgba(255,255,255,0.04); }
-.tc-tab.tc-add { font-size: 16px; font-weight: 400; padding: 10px 12px; }
+.tc-tab:hover { color: #333; background: #f5f5f5; }
+.tc-tab.active { color: #1a1a1a; font-weight: 600; border-bottom-color: #1a73e8; }
+.tc-tab.tc-add { font-size: 16px; font-weight: 400; padding: 10px 12px; color: #999; }
 .tc-tab.tc-add:hover { color: #1a73e8; }
 .collapse-btn {
   display: flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: 4px;
-  cursor: pointer; color: #888; transition: all 0.15s;
+  cursor: pointer; color: #999; transition: all 0.15s;
 }
-.collapse-btn:hover { background: rgba(255,255,255,0.08); color: #ccc; }
+.collapse-btn:hover { background: #f0f0f0; color: #666; }
 
-/* Expanded body */
+/* Body */
 .testcase-body {
-  padding: 10px 14px 14px;
-  background: #282828;
+  flex: 1;
+  padding: 12px 14px;
+  overflow-y: auto;
   display: flex; flex-direction: column; gap: 10px;
+  background: #fafafa;
 }
 .tc-section { display: flex; flex-direction: column; gap: 4px; }
 .tc-label {
-  font-size: 12px; color: #888; font-weight: 500;
+  font-size: 12px; color: #666; font-weight: 600;
   display: flex; align-items: center; gap: 8px;
+  text-transform: uppercase; letter-spacing: 0.5px;
 }
 .tc-textarea {
-  background: #1e1e1e; color: #e5e5e5;
-  border: 1px solid #3c3c3c; border-radius: 6px;
+  background: #fff; color: #1a1a1a;
+  border: 1px solid #e0e0e0; border-radius: 6px;
   padding: 10px 12px;
   font-size: 13px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-  resize: vertical; outline: none; line-height: 1.6;
+  resize: none; outline: none; line-height: 1.6;
   width: 100%; box-sizing: border-box;
   transition: border-color 0.15s;
 }
-.tc-textarea:focus { border-color: #1a73e8; }
-.tc-textarea::placeholder { color: #555; }
+.tc-textarea:focus { border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,0.1); }
+.tc-textarea::placeholder { color: #bbb; }
 .tc-toggle { border: none; background: transparent; color: #1a73e8; font-size: 12px; cursor: pointer; padding: 0; }
 .tc-toggle:hover { text-decoration: underline; }
 
+/* Run button */
+.run-btn { font-weight: 600; }
+
 /* Run result inline */
-.tc-run-result { border-top: 1px solid #3c3c3c; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-.tc-run-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; }
-.tc-run-stats { font-size: 12px; color: #888; font-weight: 400; }
+.tc-run-result { border-top: 1px solid #e8e8e8; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tc-run-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.tc-run-stats { font-size: 12px; color: #999; font-weight: 400; }
 .tc-run-output { display: flex; flex-direction: column; gap: 4px; }
+.tc-run-status { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.badge-accepted { background: #dcfce7; color: #166534; }
+.badge-error { background: #fef2f2; color: #991b1b; }
+.badge-ce { background: #fdf4ff; color: #86198f; }
+.badge-tle { background: #fff7ed; color: #9a3412; }
+.badge-mle { background: #fef2f2; color: #991b1b; }
+.badge-ole { background: #fff7ed; color: #9a3412; }
+.badge-system { background: #fef2f2; color: #991b1b; }
+.badge-pending { background: #f0f9ff; color: #0369a1; }
+.badge-running { background: #fefce8; color: #a16207; }
+.badge-default { background: #f3f4f6; color: #374151; }
+
+/* Collapsed state */
+.testcase-collapsed {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 8px 14px; cursor: pointer;
+  background: #fafafa; border-top: 1px solid #e8e8e8;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.testcase-collapsed:hover { background: #f0f0f0; }
+.collapsed-hint { font-size: 12px; color: #999; }
+.expand-icon { color: #999; font-size: 14px; }
 .tc-pre {
   margin: 0; white-space: pre-wrap; word-break: break-word;
   font-size: 12px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;

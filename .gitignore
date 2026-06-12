@@ -36,6 +36,9 @@ remote_judge/judger.linux
 .env
 agent-service/.env
 
+# RAG embedding cache (generated at runtime)
+agent-service/oiwiki_docs/.embedding_cache.json
+
 # Claude Code session files
 CLAUDE.md
 GOAL.md

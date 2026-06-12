@@ -14,9 +14,10 @@ var ErrNoProvider = errors.New("no AI provider configured")
 
 // OllamaClient is a client for the local Ollama API
 type OllamaClient struct {
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	baseURL       string
+	model         string
+	embeddingModel string // separate model for embeddings
+	httpClient    *http.Client
 }
 
 type ollamaChatRequest struct {
@@ -44,10 +45,14 @@ type ollamaEmbeddingResponse struct {
 	Embedding []float64 `json:"embedding"`
 }
 
-func NewOllamaClient(baseURL, model string) *OllamaClient {
+func NewOllamaClient(baseURL, model, embeddingModel string) *OllamaClient {
+	if embeddingModel == "" {
+		embeddingModel = model
+	}
 	return &OllamaClient{
-		baseURL: baseURL,
-		model:   model,
+		baseURL:        baseURL,
+		model:          model,
+		embeddingModel: embeddingModel,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -92,7 +97,7 @@ func (c *OllamaClient) Chat(messages []Message) (string, error) {
 // Embedding generates an embedding vector for the given text
 func (c *OllamaClient) Embedding(text string) ([]float64, error) {
 	req := ollamaEmbeddingRequest{
-		Model:  c.model,
+		Model:  c.embeddingModel,
 		Prompt: text,
 	}
 	body, err := json.Marshal(req)

@@ -31,8 +31,8 @@ ratelimit:
   submit_burst: 3
 
 ai:
-  enabled: false
-  endpoint: "http://127.0.0.1:18080"
+  enabled: true
+  endpoint: "http://127.0.0.1:8090/api/agent"
   api_key: ""
-  model: "gpt-4o-mini"
-  timeout_seconds: 20
+  model: "mimo-v2.5-pro"
+  timeout_seconds: 120

@@ -24,10 +24,11 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 	studyPlan := &StudyPlanHandler{DB: db}
 	announcement := &AnnouncementHandler{DB: db}
 	submission := &SubmissionHandler{DB: db, Broker: broker, Judger: jdClient}
-	ai := &AIHandler{DB: db, Client: aisvc.NewClient(cfg.AI)}
+	ai := &AIHandler{DB: db, Client: aisvc.NewClient(cfg.AI), Judger: jdClient}
 	audit := &AuditHandler{DB: db}
 	knowledge := &KnowledgeHandler{DB: db}
 	recommendation := &RecommendationHandler{DB: db}
+	tag := &TagHandler{DB: db}
 
 	r.GET("/healthz", func(c *gin.Context) { utils.OK(c, gin.H{"status": "ok"}) })
 
@@ -49,19 +50,24 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		api.GET("/knowledge/graph", optionalAuth(jwt), knowledge.Graph)
 		api.GET("/knowledge/:id/problems", knowledge.ProblemsForKP)
 		api.GET("/recommendations/daily", optionalAuth(jwt), recommendation.DailyRecommendation)
+
+		// Algorithm tags — public, used for problem creation and AI alignment.
+		api.GET("/tags", tag.List)
+		api.GET("/tags/names", tag.Names)
 	}
 
 	authed := r.Group("/api", middleware.JWTAuth(jwt))
 	{
 		authed.GET("/user/profile", user.Profile)
 		authed.PUT("/user/profile", user.UpdateProfile)
+		authed.GET("/user/rating-history", user.RatingHistory)
 		authed.GET("/user/heatmap", user.Heatmap)
 		authed.GET("/learning-path", recommendation.LearningPath)
 		authed.GET("/weakness-analysis", recommendation.WeaknessAnalysis)
 		authed.GET("/study-plans/checkins", studyPlan.Checkins)
-		authed.GET("/admin/users", middleware.RequireAdmin(), user.AdminList)
-		authed.PUT("/admin/users/:id/role", middleware.RequireAdmin(), user.AdminUpdateRole)
-		authed.GET("/admin/audit-logs", middleware.RequireAdmin(), audit.List)
+		authed.GET("/admin/users", middleware.RequireAdminDB(db), user.AdminList)
+		authed.PUT("/admin/users/:id/role", middleware.RequireAdminDB(db), user.AdminUpdateRole)
+		authed.GET("/admin/audit-logs", middleware.RequireAdminDB(db), audit.List)
 
 		authed.GET("/problems/:id", problem.Detail)
 		authed.POST("/problems/:id/favorite", problem.Favorite)
@@ -72,16 +78,14 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		authed.GET("/my/solutions/:id", problem.MySolutionDetail)
 		authed.GET("/solutions/:id", problem.SolutionDetail)
 		authed.POST("/solutions/:sid/like", problem.LikeSolution)
-		authed.DELETE("/solutions/:sid", middleware.RequireAdmin(), problem.DeleteSolution)
-		authed.POST("/problems", middleware.RequireAdmin(), problem.Create)
-		authed.GET("/admin/problems/:id", middleware.RequireAdmin(), problem.AdminDetail)
-		authed.GET("/admin/problems/:id/versions", middleware.RequireAdmin(), problem.Versions)
-		authed.PUT("/problems/:id", middleware.RequireAdmin(), problem.Update)
-		authed.POST("/admin/problems/:id/publish", middleware.RequireAdmin(), problem.Publish)
-		authed.POST("/admin/problems/:id/rollback", middleware.RequireAdmin(), problem.Rollback)
-		authed.POST("/admin/problems/:id/rejudge", middleware.RequireAdmin(), problem.Rejudge)
-		authed.GET("/admin/problems/:id/rejudge-jobs", middleware.RequireAdmin(), problem.RejudgeJobs)
-		authed.DELETE("/problems/:id", middleware.RequireAdmin(), problem.Delete)
+		authed.DELETE("/solutions/:sid", middleware.RequireAdminDB(db), problem.DeleteSolution)
+		authed.POST("/problems", middleware.RequireAdminDB(db), problem.Create)
+		authed.GET("/admin/problems/:id", middleware.RequireAdminDB(db), problem.AdminDetail)
+		authed.GET("/admin/problems/:id/versions", middleware.RequireAdminDB(db), problem.Versions)
+		authed.PUT("/problems/:id", middleware.RequireAdminDB(db), problem.Update)
+		authed.POST("/admin/problems/:id/publish", middleware.RequireAdminDB(db), problem.Publish)
+		authed.POST("/admin/problems/:id/rollback", middleware.RequireAdminDB(db), problem.Rollback)
+		authed.DELETE("/problems/:id", middleware.RequireAdminDB(db), problem.Delete)
 
 		authed.POST("/problems/:id/run", submission.Run)
 		authed.POST("/submissions",
@@ -94,12 +98,13 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		authed.GET("/submissions/:id/cases", submission.Cases)
 		authed.GET("/submissions/:id/output", submission.Output)
 
-		authed.POST("/ai/chat", ai.Chat)
+		aiRateLimit := middleware.PerUserRateLimit(10, 3)
+		authed.POST("/ai/chat", aiRateLimit, ai.Chat)
 		authed.GET("/ai/history", ai.History)
 		authed.GET("/ai/conversations/:id/messages", ai.Messages)
-		authed.POST("/ai/code-diagnosis", ai.CodeDiagnosis)
-		authed.POST("/ai/knowledge-graph", ai.KnowledgeGraph)
-		authed.POST("/ai/solve", ai.Solve)
+		authed.POST("/ai/code-diagnosis", aiRateLimit, ai.CodeDiagnosis)
+		authed.POST("/ai/knowledge-graph", aiRateLimit, ai.KnowledgeGraph)
+		authed.POST("/ai/solve", aiRateLimit, ai.Solve)
 	}
 	return r
 }

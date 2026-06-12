@@ -108,9 +108,9 @@ func (c *Client) GetResult(submissionID uint64) (*SubmissionResult, error) {
 	return envelope.Data, nil
 }
 
-// RunCode runs code with custom input (synchronous)
-func (c *Client) RunCode(lang, code, stdin string) (*SubmissionResult, error) {
-	payload := map[string]string{
+// RunCode runs code with custom input (synchronous) against a specific problem
+func (c *Client) RunCode(problemID uint64, lang, code, stdin string) (*SubmissionResult, error) {
+	payload := map[string]interface{}{
 		"language": lang,
 		"code":     code,
 		"stdin":    stdin,
@@ -120,7 +120,7 @@ func (c *Client) RunCode(lang, code, stdin string) (*SubmissionResult, error) {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/api/problems/0/run", c.baseURL)
+	url := fmt.Sprintf("%s/api/problems/%d/run", c.baseURL, problemID)
 	resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("run code failed: %w", err)
@@ -128,9 +128,24 @@ func (c *Client) RunCode(lang, code, stdin string) (*SubmissionResult, error) {
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	var result SubmissionResult
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, err
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("run code returned %d: %s", resp.StatusCode, string(respBody))
 	}
-	return &result, nil
+
+	var envelope struct {
+		Code int              `json:"code"`
+		Data *SubmissionResult `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		// Try direct unmarshal for non-envelope responses
+		var result SubmissionResult
+		if err2 := json.Unmarshal(respBody, &result); err2 != nil {
+			return nil, err
+		}
+		return &result, nil
+	}
+	if envelope.Data == nil {
+		return nil, fmt.Errorf("no data in response")
+	}
+	return envelope.Data, nil
 }

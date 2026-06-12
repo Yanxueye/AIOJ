@@ -15,10 +15,8 @@ import (
 	"github.com/terminaloj/backend/internal/database"
 	"github.com/terminaloj/backend/internal/handler"
 	"github.com/terminaloj/backend/internal/judger"
-	"github.com/terminaloj/backend/internal/models"
 	"github.com/terminaloj/backend/internal/mq"
 	"github.com/terminaloj/backend/internal/utils"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -56,8 +54,6 @@ func main() {
 			log.Printf("[worker] stopped: %v", err)
 		}
 	}()
-	go startRejudgeLoop(workerCtx, worker, db)
-
 	jwtMgr := utils.NewJWTManager(cfg.JWT.Secret, cfg.JWT.ExpireHours)
 	router := handler.BuildRouter(db, broker, jdClient, jwtMgr, cfg)
 
@@ -83,25 +79,3 @@ func main() {
 	_ = srv.Shutdown(shutdownCtx)
 }
 
-func startRejudgeLoop(ctx context.Context, worker *mq.Worker, db *gorm.DB) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			var jobs []models.RejudgeJob
-			if err := db.Where("status = ?", "pending").Order("id ASC").Limit(2).Find(&jobs).Error; err != nil {
-				log.Printf("[rejudge] list jobs failed: %v", err)
-				continue
-			}
-			for _, job := range jobs {
-				if err := worker.ProcessRejudgeJob(ctx, job.ID); err != nil {
-					log.Printf("[rejudge] process job %d failed: %v", job.ID, err)
-				}
-			}
-		}
-	}
-}

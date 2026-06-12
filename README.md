@@ -1,254 +1,324 @@
 # Fused
 
-`fused` 是一个融合仓库，用来把 `AIOJ-main`、`remote_judge` 和 `agent-service` 放在同一个代码库中协同开发。
+> **融合仓库** — 将 `AIOJ-main`、`remote_judge`、`agent-service` 整合于同一代码库协同开发。
 
-当前仓库里包含三个核心子项目：
+![Go](https://img.shields.io/badge/Go-1.21%2F1.25%2B-00ADD8?logo=go)
+![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-- `AIOJ-main`
-  一个 AI 辅助在线判题平台，包含 Vue 3 前端和 Go 后端，负责用户系统、题目管理、提交入口、提交记录、学习统计、知识图谱和个性化推荐。
-- `remote_judge`
-  一个独立的判题服务，负责代码编译、沙箱运行、测试点判定、状态汇总，以及更细粒度的判题结果输出。
-- `agent-service`
-  一个 AI 微服务，提供大模型对话、代码分析、提示生成、题解辅助等能力，支持 MIMO API（主）+ 本地 Ollama（降级）双模型策略。
+---
 
-## 当前集成方式
+## 目录
 
-当前仓库采用的主集成方案是：
+- [项目概览](#项目概览)
+- [整体架构](#整体架构)
+- [判题链路](#判题链路)
+- [AI 链路](#ai-链路)
+- [仓库结构](#仓库结构)
+- [技术栈](#技术栈)
+- [环境要求](#环境要求)
+- [快速启动](#快速启动)
+- [端口总览](#端口总览)
+- [默认账号](#默认账号)
+- [常用命令](#常用命令)
+- [相关文档](#相关文档)
 
-- `AIOJ-main/backend` 负责接收提交请求
-- 提交任务进入 RabbitMQ
-- `AIOJ-main/backend` 的 worker 从 MySQL 读取题目与测试点
-- worker 通过 gRPC 调用 `remote_judge/cmd/judger`
-- `remote_judge` 返回完整判题结果
-- `AIOJ-main/backend` 把结果写回自己的提交记录
-- AI 相关请求通过 `AIOJ-main/backend` 转发给 `agent-service`
+---
 
-这条链路保留了各服务的职责边界：
+## 项目概览
 
-- `AIOJ-main` 负责平台业务和提交流转
-- `remote_judge` 负责纯判题执行
-- `agent-service` 负责 AI 能力（对话、分析、RAG）
+当前仓库包含三个核心子项目：
 
-同时，仓库里也保留了 `remote_judge/cmd/server` 这一完整判题后端入口，便于后续尝试"由 remote_judge 独立托管提交队列和判题流程"的另一种方案。
+| 项目 | 职责 | 技术栈 |
+|------|------|--------|
+| **AIOJ-main** | AI 辅助在线判题平台 | Vue 3 + Go 1.21 (Gin/GORM) |
+| **remote_judge** | 独立判题子系统 | Go 1.25+ (Docker Sandbox) |
+| **agent-service** | AI 微服务 | Go 1.21 (Ollama/MIMO) |
 
-## 已对齐的判题结果信息
+核心特性:
 
-当前融合后的主链路已经尽量向 `remote_judge` 的结果模型对齐，AIOJ 侧已接入这些 richer 字段：
+- **AIOJ-main** — 用户系统、题目管理（52 道 + 版本控制）、异步判题、学习计划、知识图谱（73+ 节点）、每日推荐、Rating 系统、AI 能力转发、管理后台
+- **remote_judge** — Docker 沙箱执行、代码黑名单检测、多语言支持（C++17/Go/Python3）、容器池复用、熔断降级、gRPC + HTTP 双协议、70+ 测试
+- **agent-service** — 大模型对话、代码诊断、解题辅助（含沙箱验证）、知识图谱生成、RAG 检索增强（52 篇 OI-Wiki 文档向量化）、MIMO API（主）+ Ollama（降级）双模型策略
 
-- `status`
-  包含 `Pending`、`Queueing`、`Compiling`、`Running`、`Accepted`、`Wrong Answer`、`Compile Error`、`Runtime Error`、`Time Limit Exceeded`、`Memory Limit Exceeded`、`Output Limit Exceeded`、`System Error`
-- `traceId`
-- `runtimeMs`
-- `memoryKb`
-- `compileOutput`
-- `errorMessage`
-- `caseResults`
-- `stdoutBytes`
-- `stderrBytes`
-- `signal`
-- `queueStartedAt`
-- `judgeStartedAt`
-- `finishedAt`
+---
 
-也就是说，当前不再只保留"是否 Accepted"这种扁平信息，而是尽量保留 `remote_judge` 的完整判题细节。
+## 整体架构
+
+```mermaid
+flowchart TB
+    subgraph Fused["<b>fused 融合仓库</b>"]
+        direction LR
+        AIOJ[("<b>AIOJ-main</b><br/>────<br/>AI 在线判题平台<br/>────<br/>Vue 3 前端<br/>Go 1.21 Gin/GORM 后端<br/>────<br/>用户系统 · 题目管理<br/>异步判题 · 知识图谱<br/>Rating · 管理后台")]
+        RJ[("<b>remote_judge</b><br/>────<br/>独立判题子系统<br/>────<br/>Go 1.25+<br/>Docker CLI Sandbox<br/>gRPC + JSON Codec<br/>────<br/>黑名单 · 容器池<br/>熔断 · 70+ 测试")]
+        AS[("<b>agent-service</b><br/>────<br/>AI 微服务<br/>────<br/>Go 1.21 Gin<br/>MIMO API (主)<br/>Ollama (降级)<br/>────<br/>RAG · 解题辅助<br/>代码诊断 · 知识图谱")]
+    end
+
+    subgraph Infra["基础设施"]
+        MySQL[("MySQL 8.x")]
+        RMQ[("RabbitMQ 3.x")]
+        Docker[("Docker Desktop<br/>C++17 / Go / Python3")]
+        OllamaSrv[("Ollama Server<br/>qwen2.5-coder<br/>nomic-embed-text")]
+        MIMO[("MIMO API<br/>mimo-v2.5-pro")]
+    end
+
+    AIOJ -->|"GORM<br/>读写业务数据"| MySQL
+    AIOJ -->|"发布 JudgeTask<br/>消费判题结果"| RMQ
+    AIOJ -->|"gRPC (JSON Codec)<br/>提交判题请求"| RJ
+    AIOJ -->|"HTTP 内部代理<br/>转发 AI 请求"| AS
+    RJ -->|"Docker CLI<br/>编译 + 运行 + 测量"| Docker
+    AS -->|"优先调用"| MIMO
+    AS -->|"降级 / Embedding"| OllamaSrv
+
+    style Fused fill:#1a1a2e,stroke:#16213e,color:#e0e0e0
+    style AIOJ fill:#0f3460,stroke:#16213e,color:#c8e6c9
+    style RJ fill:#0f3460,stroke:#16213e,color:#bbdefb
+    style AS fill:#0f3460,stroke:#16213e,color:#f8bbd0
+    style MySQL fill:#e8f5e9,stroke:#4caf50
+    style RMQ fill:#fff3e0,stroke:#ff9800
+    style Docker fill:#e3f2fd,stroke:#2196f3
+    style OllamaSrv fill:#f3e5f5,stroke:#9c27b0
+    style MIMO fill:#fce4ec,stroke:#e91e63
+```
+
+---
+
+## 判题链路
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor User as 用户
+    participant API as AIOJ Backend<br/>(Gin :8080)
+    participant MQ as RabbitMQ
+    participant Worker as MQ Worker
+    participant DB as MySQL
+    participant Judger as remote_judge<br/>(gRPC :9090)
+    participant Sandbox as Docker Sandbox
+
+    rect rgb(227, 242, 253)
+        Note over User,API: ① 接收提交
+        User->>+API: POST /api/submissions {problemId, code, language}
+        API->>API: JWT 认证 + 参数校验
+        API->>DB: INSERT submission (status=Pending)
+        API->>MQ: Publish JudgeTask
+        API-->>-User: 201 {submissionId, status: Pending}
+    end
+
+    rect rgb(255, 243, 224)
+        Note over MQ,DB: ② 异步调度
+        MQ->>+Worker: Consume JudgeTask
+        Worker->>DB: UPDATE status → Queueing
+        Worker->>DB: 查询题目详情 + 测试点
+        Worker->>DB: UPDATE status → Judging
+        Worker->>-Judger: gRPC JudgeRequest
+    end
+
+    rect rgb(232, 245, 233)
+        Note over Judger,Sandbox: ③ 沙箱判题
+        Judger->>Judger: 代码黑名单检测 (AC 自动机)
+        Judger->>+Sandbox: Docker CLI 编译 + 运行
+        Sandbox-->>-Judger: 运行输出 + 资源用量
+        Judger->>Judger: 逐测试点结果比对
+        Judger-->>Worker: gRPC JudgeResponse {status, runtimeMs, memoryKb, caseResults[], traceId, ...}
+    end
+
+    rect rgb(243, 229, 245)
+        Note over Worker,DB: ④ 结果持久化
+        Worker->>DB: 写入 verdict + runtime + memory + caseResults
+        Worker->>DB: UPDATE status → Finished
+    end
+
+    rect rgb(252, 228, 236)
+        Note over User,API: ⑤ 查询结果
+        User->>+API: GET /api/submissions/:id
+        API->>DB: 查询最新结果
+        API-->>-User: 200 {status, runtimeMs, caseResults[], ...}
+    end
+```
+
+---
+
+## AI 链路
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor User as 前端 (Vue 3)
+    participant Backend as AIOJ Backend<br/>/api/ai/*
+    participant DB as MySQL
+    participant Agent as agent-service<br/>/api/agent/* :8090
+    participant RAG as RAG Engine
+    participant LLM as MIMO / Ollama
+
+    rect rgb(227, 242, 253)
+        Note over User,Backend: ① 鉴权与限流
+        User->>+Backend: POST /api/ai/chat (JWT)
+        Backend->>Backend: JWT 鉴权 + Rate Limit
+    end
+
+    rect rgb(255, 243, 224)
+        Note over Backend,DB: ② 上下文组装
+        Backend->>DB: 查询用户画像 + 题目信息 + 提交历史
+        DB-->>Backend: 结构化数据
+        Backend->>Backend: 组装 Prompt 上下文<br/>(题目 + 代码 + 判题结果 + 用户数据)
+    end
+
+    rect rgb(232, 245, 233)
+        Note over Backend,LLM: ③ AI 推理
+        Backend->>+Agent: HTTP POST /api/agent/chat (上下文 JSON)
+        Agent->>+RAG: Query 向量化 + 检索 Top-3
+        RAG-->>-Agent: OI-Wiki 相关知识块
+        Agent->>Agent: 构建 System Prompt (RAG 知识 + 用户上下文)
+        Agent->>+LLM: Chat Completion
+        LLM-->>-Agent: AI 回复
+        Agent->>Agent: 结构化解析 (summary, issues[], suggestions[], algorithmTags[])
+        Agent-->>-Backend: JSON Response
+    end
+
+    rect rgb(243, 229, 245)
+        Note over Backend,User: ④ 响应透传
+        Backend->>Backend: 可选: 调用 remote_judge 判题验证
+        Backend-->>-User: JSON Response (透传)
+    end
+```
+
+> 仓库同时保留 `remote_judge/cmd/server` 作为独立判题后端入口，支持"由 remote_judge 独立托管提交队列和判题流程"的备用部署方案。
+
+---
+
+### 判题结果字段
+
+当前主链路已向 `remote_judge` 的完整结果模型对齐：
+
+| 分类 | 字段 | 说明 |
+|------|------|------|
+| **状态** | `status` | 4 中间态 + 7 终态: Pending / Queueing / Compiling / Running / Accepted / WA / CE / RE / TLE / MLE / OLE / SE |
+| **追踪** | `traceId` | 全链路追踪 ID, 贯穿 RabbitMQ → Worker → gRPC |
+| **性能** | `runtimeMs` / `memoryKb` | 运行耗时 (ms) 和内存峰值 (KB) |
+| **编译** | `compileOutput` | 编译器 stdout/stderr |
+| **错误** | `errorMessage` / `signal` | 错误描述 + 终止信号 |
+| **测试点** | `caseResults[]` | 每个测试点的判定详情 |
+| **输出** | `stdoutBytes` / `stderrBytes` | 标准输出和标准错误 |
+| **时间** | `queueStartedAt` / `judgeStartedAt` / `finishedAt` | 入队、开始判题、完成时间 |
+
+---
 
 ## 仓库结构
 
-```text
-fused/
-├─ AIOJ-main/
-│  ├─ backend/
-│  │  ├─ cmd/
-│  │  ├─ docker/
-│  │  ├─ internal/
-│  │  ├─ proto/
-│  │  ├─ API.md
-│  │  └─ config.yaml
-│  ├─ frontend/
-│  │  ├─ src/
-│  │  └─ package.json
-│  ├─ README.md
-│  ├─ PROGRESS.md
-│  └─ WORK_SUMMARY.md
-├─ remote_judge/
-│  ├─ cmd/
-│  ├─ docker/
-│  ├─ internal/
-│  ├─ pkg/
-│  ├─ proto/
-│  ├─ scripts/
-│  └─ README.md
-├─ agent-service/
-│  ├─ cmd/server/
-│  ├─ internal/
-│  ├─ .env            (需自行创建，含 API Key)
-│  ├─ go.mod
-│  └─ README.md
-├─ GOAL.md
-└─ CLAUDE.md
 ```
+fused/
+│
+├── AIOJ-main/                          # AI 辅助在线判题平台
+│   ├── backend/                        #   Go 后端 (Gin/GORM)
+│   │   ├── cmd/server/                 #     HTTP API 入口
+│   │   ├── cmd/judger/                 #     gRPC 判题服务入口
+│   │   ├── docker/                     #     MySQL + RabbitMQ Compose
+│   │   ├── internal/                   #     handler / models / mq / judger / ai / middleware
+│   │   ├── proto/                      #     gRPC proto 定义
+│   │   ├── API.md                      #     API 契约文档
+│   │   └── config.yaml                 #     运行配置
+│   ├── frontend/                       #   Vue 3 前端
+│   │   ├── src/                        #     应用源码
+│   │   └── package.json
+│   └── README.md
+│
+├── remote_judge/                       # 独立判题子系统
+│   ├── cmd/                            #   server / judger / smoke / stress 入口
+│   ├── docker/                         #   判题镜像 + Compose
+│   ├── internal/                       #   domain / sandbox / judger / queue / worker / ...
+│   ├── docs/                           #   测试文档 + 开发周记
+│   └── README.md
+│
+├── agent-service/                      # AI 微服务
+│   ├── cmd/server/                     #   HTTP API 入口
+│   ├── cmd/crawler/                    #   OI-Wiki 文档爬虫
+│   ├── internal/                       #   ai / handler / rag / judge / config
+│   ├── oiwiki_docs/                    #   爬取的 OI-Wiki 文档 (52 篇)
+│   ├── .env                            #   配置文件 (需自行创建)
+│   └── README.md
+│
+├── agent-service-design.md             # AI 功能详细设计
+├── PROJECT_GAPS.md                     # 项目缺陷与改进计划
+├── CLAUDE.md                           # 开发指南
+└── README.md                           # (本文档)
+```
+
+---
 
 ## 技术栈
 
 ### AIOJ-main
 
-- Frontend: Vue 3, Vite, Pinia, Vue Router, Element Plus, Monaco Editor, ECharts
-- Backend: Go 1.21, Gin, GORM, MySQL, RabbitMQ, gRPC, JWT
+| 层级 | 技术 |
+|------|------|
+| 前端 | Vue 3, Vite, Pinia, Vue Router, Element Plus, Monaco Editor, ECharts |
+| 后端 | Go 1.21, Gin, GORM, MySQL, RabbitMQ, gRPC, JWT |
 
 ### remote_judge
 
-- Go 1.25+
-- Docker CLI sandbox
-- gRPC + JSON codec
-- Memory / RabbitMQ queue
-- Memory / MySQL repository
+| 类别 | 工具 |
+|------|------|
+| 语言 | Go 1.25+ |
+| 沙箱 | Docker CLI Sandbox |
+| 通信 | gRPC + JSON Codec |
+| 队列 | Memory / RabbitMQ |
+| 仓储 | Memory / MySQL |
 
 ### agent-service
 
-- Go 1.21, Gin
-- MIMO API（OpenAI 兼容，主模型）
-- Ollama（本地，降级模型）
-- HTTP 通信，经 AIOJ 后端转发
+| 类别 | 工具 |
+|------|------|
+| 语言 | Go 1.21, Gin |
+| 主模型 | MIMO API (OpenAI 兼容) |
+| 降级模型 | Ollama (本地) |
+| 文档处理 | langchaingo |
+
+---
 
 ## 环境要求
 
-至少需要以下环境：
-
-- Go
-  `AIOJ-main/backend` 和 `agent-service` 使用 Go 1.21，`remote_judge` 使用 Go 1.25+
-- Node.js / npm
-  用于 `AIOJ-main/frontend`
-- MySQL 8.x
-  AIOJ 后端使用
-- RabbitMQ 3.x
-  AIOJ 提交队列使用
-- Docker Desktop
-  `remote_judge` 运行真实沙箱时使用
-- Ollama（可选）
-  `agent-service` 降级模型使用
-
-## 项目配置
-
-### 1. 环境依赖安装
-
 | 依赖 | 版本要求 | 用途 |
 |------|---------|------|
-| Go | 1.21+（AIOJ、agent-service）/ 1.25+（remote_judge） | 后端编译运行 |
+| Go | 1.21+ (AIOJ / agent-service) / 1.25+ (remote_judge) | 后端编译运行 |
 | Node.js / npm | 18+ | 前端编译运行 |
 | MySQL | 8.x | 数据存储 |
 | RabbitMQ | 3.x | 提交消息队列 |
 | Docker Desktop | 最新版 | 判题沙箱运行 |
+| Ollama | 可选 | agent-service 降级模型 + RAG embedding |
 
-### 2. Docker 镜像拉取/构建
+---
 
-启动前需确保以下镜像可用：
+## 快速启动
+
+以下步骤以默认集成方式为准:
+
+```
+AIOJ Backend --> RabbitMQ --> Worker --> gRPC --> remote_judge
+AIOJ Backend --> agent-service
+```
+
+### 1. 启动 AIOJ 依赖 (MySQL + RabbitMQ)
 
 ```cmd
-REM 启动 MySQL + RabbitMQ（AIOJ 依赖）
 cd AIOJ-main\backend
 docker compose -f docker\docker-compose.yml up -d mysql rabbitmq
+```
 
-REM 构建判题沙箱镜像（remote_judge 需要）
+RabbitMQ 管理面板: `http://localhost:15672` (guest/guest)
+
+### 2. 构建判题沙箱镜像
+
+```cmd
 cd remote_judge
 docker build -t remote-judge-cpp17 -f docker\images\cpp17\Dockerfile .
 docker build -t remote-judge-go122 -f docker\images\go1.22\Dockerfile .
 docker build -t remote-judge-python311 -f docker\images\python3.11\Dockerfile .
 ```
 
-### 3. API Key / URL 配置
-
-#### agent-service 配置
-
-在 `agent-service/` 目录下创建 `.env` 文件：
-
-```env
-# AI 服务提供商：openai（使用 MIMO API）或 ollama（本地模型）
-AI_PROVIDER=openai
-
-# MIMO API 配置（主模型）
-OPENAI_API_KEY=your-mimo-api-key-here
-OPENAI_BASE_URL=https://token-plan-sgp.xiaomimimo.com/v1
-OPENAI_MODEL=mimo-v2.5-pro
-
-# Ollama 配置（本地降级模型，可选）
-OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen2.5-coder:7b
-
-# 服务地址
-AGENT_HTTP_ADDR=:8090
-AIOJ_BACKEND_URL=http://127.0.0.1:8080
-```
-
-> **说明**：如不配置 `OPENAI_API_KEY`，agent-service 将使用内置 Mock 回复（仅用于开发调试）。如需使用 Ollama 本地模型，先安装 Ollama 并拉取模型：`ollama pull qwen2.5-coder:7b`。
-
-#### AIOJ 后端配置
-
-编辑 `AIOJ-main/backend/config.yaml`，关键配置项：
-
-```yaml
-# MySQL 连接
-mysql:
-  dsn: "toj:toj_password@tcp(127.0.0.1:3306)/terminaloj?charset=utf8mb4&parseTime=True&loc=Local"
-
-# RabbitMQ 连接
-rabbitmq:
-  url: "amqp://guest:guest@127.0.0.1:5672/"
-  enabled: true
-
-# 判题服务（remote_judge gRPC 地址）
-judger:
-  grpc_addr: "127.0.0.1:9090"
-  remote: true
-
-# AI 服务（agent-service 地址，可选）
-ai:
-  enabled: false                                    # 设为 true 启用 AI 功能
-  endpoint: "http://127.0.0.1:8090/api/agent"       # 指向 agent-service
-  api_key: ""
-  model: "mimo-v2.5-pro"
-  timeout_seconds: 20
-```
-
-> **说明**：`ai.enabled` 默认为 `false`，此时 AI 功能使用内置 Mock。设为 `true` 并确保 agent-service 运行后，即可使用完整 AI 功能。
-
-### 4. 端口总览
-
-| 服务 | 默认端口 | 说明 |
-|------|---------|------|
-| AIOJ 前端 | :5173 | Vite 开发服务器 |
-| AIOJ 后端 | :8080 | Gin HTTP API |
-| remote_judge | :9090 | gRPC 判题服务 |
-| agent-service | :8090 | AI 微服务 |
-| MySQL | :3306 | 数据库 |
-| RabbitMQ | :5672 | 消息队列 |
-| RabbitMQ 管理面板 | :15672 | Web UI（guest/guest） |
-
-## 快速启动
-
-下面的步骤以当前默认集成方式为准，即：
-
-- `AIOJ-main/backend` -> RabbitMQ -> worker -> gRPC -> `remote_judge/cmd/judger`
-- AI 请求 -> `AIOJ-main/backend` -> `agent-service`
-
-### 1. 启动 AIOJ 依赖
-
-```cmd
-cd AIOJ-main\backend
-docker compose -f docker/docker-compose.yml up -d mysql rabbitmq
-```
-
-### 2. 构建 remote_judge 判题镜像
-
-```cmd
-cd remote_judge
-docker build -t remote-judge-cpp17 -f docker/images/cpp17/Dockerfile .
-docker build -t remote-judge-go122 -f docker/images/go1.22/Dockerfile .
-docker build -t remote-judge-python311 -f docker/images/python3.11/Dockerfile .
-```
-
 ### 3. 启动 remote_judge gRPC 判题服务
-
-当前 AIOJ 默认配置指向 `127.0.0.1:9090`。
 
 ```cmd
 cd remote_judge
@@ -258,16 +328,12 @@ go run .\cmd\judger
 
 ### 4. 启动 agent-service
 
-需要先创建配置文件（参考 `agent-service/README.md`）：
+> 需要先创建 `agent-service\.env` 配置文件, 详见 [agent-service/README.md](agent-service/README.md)
 
 ```cmd
 cd agent-service
 go run .\cmd\server
 ```
-
-默认监听：
-
-- API: `http://127.0.0.1:8090`
 
 ### 5. 启动 AIOJ 后端
 
@@ -275,10 +341,6 @@ go run .\cmd\server
 cd AIOJ-main\backend
 go run .\cmd\server -config config.yaml
 ```
-
-默认监听：
-
-- API: `http://127.0.0.1:8080`
 
 ### 6. 启动 AIOJ 前端
 
@@ -288,71 +350,52 @@ npm install
 npm run dev
 ```
 
-通常前端开发服务器地址是：
+---
 
-- `http://127.0.0.1:5173`
+## 端口总览
+
+| 服务 | 默认端口 | 说明 |
+|------|---------|------|
+| AIOJ 前端 | :5173 | Vite 开发服务器 |
+| AIOJ 后端 | :8080 | Gin HTTP API |
+| remote_judge gRPC | :9090 | 判题服务 |
+| agent-service | :8090 | AI 微服务 |
+| MySQL | :3306 | 数据库 |
+| RabbitMQ | :5672 | 消息队列 |
+| RabbitMQ 管理 | :15672 | Web UI |
+
+---
 
 ## 默认账号
 
-当前 AIOJ 默认种子账号：
+| 角色 | 用户名 | 密码 |
+|------|--------|------|
+| 普通用户 | `coder_test` | `123456` |
+| 管理员 | `admin` | `123456` |
 
-```text
-普通用户:
-username: coder_test
-password: 123456
-
-管理员:
-username: admin
-password: 123456
-```
-
-## 另一种保留方案
-
-仓库中仍然保留了另一种集成方向：
-
-- AIOJ 后端只做薄代理
-- 提交通过 HTTP 转发给 `remote_judge/cmd/server`
-- 判题队列、Worker、状态推进更多由 `remote_judge` 自己负责
+---
 
 ## 常用命令
 
-### AIOJ backend tests
+| 操作 | 命令 |
+|------|------|
+| AIOJ 后端测试 | `cd AIOJ-main\backend && go test ./...` |
+| remote_judge 测试 | `cd remote_judge && go test ./...` |
+| AIOJ 前端构建 | `cd AIOJ-main\frontend && npm run build` |
+| agent-service 构建 | `cd agent-service && go build ./...` |
 
-```cmd
-cd AIOJ-main\backend
-go test ./...
-```
-
-### remote_judge tests
-
-```cmd
-cd remote_judge
-go test ./...
-```
-
-### AIOJ frontend build
-
-```cmd
-cd AIOJ-main\frontend
-npm run build
-```
-
-### agent-service build
-
-```cmd
-cd agent-service
-go build ./...
-```
+---
 
 ## 相关文档
 
-- `AIOJ-main/backend/API.md`
-  AIOJ 后端 API 文档
-- `AIOJ-main/frontend/API.md`
-  AIOJ 前端接口约定
-- `AIOJ-main/README.md`
-  AIOJ 项目原始说明
-- `remote_judge/README.md`
-  remote_judge 项目原始说明
-- `agent-service/README.md`
-  agent-service AI 微服务说明
+| 文档 | 说明 |
+|------|------|
+| [AIOJ-main/README.md](AIOJ-main/README.md) | AIOJ 项目说明 |
+| [AIOJ-main/backend/API.md](AIOJ-main/backend/API.md) | 后端 API 契约 |
+| [AIOJ-main/frontend/API.md](AIOJ-main/frontend/API.md) | 前端接口约定 |
+| [remote_judge/README.md](remote_judge/README.md) | remote_judge 项目说明 |
+| [agent-service/README.md](agent-service/README.md) | agent-service 项目说明 |
+| [agent-service-design.md](agent-service-design.md) | AI 功能详细设计 (Prompt、状态机、标签字典) |
+| [PROJECT_GAPS.md](PROJECT_GAPS.md) | 项目缺陷与改进计划 |
+| [CLAUDE.md](CLAUDE.md) | 开发指南 (命令、架构、端口) |
+| [remote_judge/docs/check.md](remote_judge/docs/check.md) | remote_judge 测试引导 |

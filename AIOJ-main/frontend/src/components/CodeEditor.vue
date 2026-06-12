@@ -1,12 +1,17 @@
 <template>
-  <div class="code-editor">
+  <div class="code-editor" :class="{ 'is-fullscreen': isFullscreen }">
     <div class="editor-toolbar">
       <el-select v-model="currentLang" size="small" style="width: 140px" @change="onLangChange">
         <el-option v-for="lang in languages" :key="lang.value" :label="lang.label" :value="lang.value" />
       </el-select>
-      <el-select v-model="fontSize" size="small" style="width: 100px">
+      <el-select v-model="fontSize" size="small" style="width: 100px" @change="onFontSizeChange">
         <el-option v-for="s in [12, 13, 14, 15, 16, 18]" :key="s" :label="`${s}px`" :value="s" />
       </el-select>
+      <el-tooltip content="自动换行" placement="top">
+        <el-button size="small" :type="wordWrap === 'on' ? 'primary' : ''" text @click="toggleWordWrap">
+          <el-icon><Operation /></el-icon>
+        </el-button>
+      </el-tooltip>
       <span v-if="draftKey" class="draft-status">
         <el-icon><CircleCheck /></el-icon>
         {{ draftStatus }}
@@ -18,6 +23,11 @@
       <el-button size="small" @click="resetCode">
         <el-icon><RefreshRight /></el-icon>重置
       </el-button>
+      <el-tooltip :content="isFullscreen ? '退出全屏' : '全屏编辑'" placement="top">
+        <el-button size="small" @click="toggleFullscreen">
+          <el-icon><FullScreen v-if="!isFullscreen" /><Aim v-else /></el-icon>
+        </el-button>
+      </el-tooltip>
     </div>
     <div ref="editorContainer" class="editor-container" />
   </div>
@@ -25,6 +35,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { FullScreen, Aim, Operation } from '@element-plus/icons-vue'
 import * as monaco from 'monaco-editor'
 
 const props = defineProps({
@@ -55,6 +66,8 @@ function mergedTemplates() {
 
 const currentLang = ref(props.language)
 const fontSize = ref(14)
+const wordWrap = ref('on')
+const isFullscreen = ref(false)
 const draftStatus = ref('草稿保护已开启')
 const hasSavedDraft = ref(false)
 const editorContainer = ref(null)
@@ -62,6 +75,11 @@ let editor = null
 let saveTimer = null
 
 onMounted(() => {
+  // Migrate legacy draft if exists
+  if (props.legacyDraftKey) {
+    migrateDrafts()
+  }
+  window.addEventListener('keydown', handleKeydown)
   nextTick(() => {
     const initialDraft = readDraft(currentLang.value)
     const initialValue = props.modelValue || initialDraft?.code || mergedTemplates()[currentLang.value] || ''
@@ -82,7 +100,8 @@ onMounted(() => {
       roundedSelection: true,
       cursorBlinking: 'smooth',
       smoothScrolling: true,
-      padding: { top: 12 }
+      padding: { top: 12 },
+      wordWrap: wordWrap.value
     })
 
     editor.onDidChangeModelContent(() => {
@@ -98,7 +117,31 @@ onMounted(() => {
 
 watch(fontSize, val => {
   editor?.updateOptions({ fontSize: val })
+  nextTick(() => editor?.layout())
 })
+
+function onFontSizeChange() {
+  editor?.updateOptions({ fontSize: fontSize.value })
+  nextTick(() => editor?.layout())
+}
+
+function toggleWordWrap() {
+  wordWrap.value = wordWrap.value === 'on' ? 'off' : 'on'
+  editor?.updateOptions({ wordWrap: wordWrap.value })
+}
+
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+  nextTick(() => editor?.layout())
+}
+
+// Handle ESC key to exit fullscreen
+function handleKeydown(e) {
+  if (e.key === 'Escape' && isFullscreen.value) {
+    isFullscreen.value = false
+    nextTick(() => editor?.layout())
+  }
+}
 
 watch(() => props.modelValue, val => {
   if (editor && val !== editor.getValue()) {
@@ -126,6 +169,7 @@ function resetCode() {
 
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
+  window.removeEventListener('keydown', handleKeydown)
   if (editor) {
     saveDraft(editor.getValue())
   }
@@ -196,6 +240,24 @@ function refreshDraftState(lang = currentLang.value) {
 function formatTime(value) {
   return new Date(value).toLocaleTimeString('zh-CN', { hour12: false })
 }
+
+function migrateDrafts() {
+  if (!props.legacyDraftKey || !props.draftKey) return
+  for (const lang of ['cpp', 'python', 'go']) {
+    const legacyKey = `terminal-oj:code-draft:${props.legacyDraftKey}:${lang}`
+    const newKey = `terminal-oj:code-draft:${props.draftKey}:${lang}`
+    try {
+      const legacy = window.localStorage.getItem(legacyKey)
+      const existing = window.localStorage.getItem(newKey)
+      if (legacy && !existing) {
+        window.localStorage.setItem(newKey, legacy)
+        window.localStorage.removeItem(legacyKey)
+      } else if (legacy) {
+        window.localStorage.removeItem(legacyKey)
+      }
+    } catch { /* ignore */ }
+  }
+}
 </script>
 
 <style scoped>
@@ -206,6 +268,13 @@ function formatTime(value) {
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--border-color);
+}
+.code-editor.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  border-radius: 0;
+  background: #1e1e1e;
 }
 .editor-toolbar {
   display: flex;

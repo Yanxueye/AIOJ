@@ -1,9 +1,9 @@
-import http, { USE_MOCK } from './index'
-import { mockApi } from './mock'
+import http from './index'
 
 export const userApi = {
-  login: data => USE_MOCK ? mockApi.login(data) : http.post('/auth/login', data),
-  register: data => USE_MOCK ? mockApi.register(data) : http.post('/auth/register', data),
-  getProfile: () => USE_MOCK ? mockApi.getProfile() : http.get('/user/profile'),
-  updateProfile: data => USE_MOCK ? mockApi.updateProfile(data) : http.put('/user/profile', data)
+  login: data => http.post('/auth/login', data),
+  register: data => http.post('/auth/register', data),
+  getProfile: () => http.get('/user/profile'),
+  updateProfile: data => http.put('/user/profile', data),
+  getRatingHistory: (limit = 100) => http.get('/user/rating-history', { params: { limit } })
 }

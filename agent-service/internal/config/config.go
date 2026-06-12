@@ -19,8 +19,10 @@ type Config struct {
 	OllamaURL   string
 	OllamaModel string
 
-	// Judge service
-	JudgeGRPCAddr  string
+	// Embedding model (separate from chat model)
+	EmbeddingModel string // e.g., "nomic-embed-text:latest"
+
+	// Judge service (HTTP, not gRPC)
 	AIOJBackendURL string
 }
 
@@ -37,7 +39,7 @@ func Load() Config {
 		OpenAIModel:    getEnv("OPENAI_MODEL", "mimo-v2.5-pro"),
 		OllamaURL:      getEnv("OLLAMA_URL", "http://127.0.0.1:11434"),
 		OllamaModel:    getEnv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
-		JudgeGRPCAddr:  getEnv("JUDGE_GRPC_ADDR", "127.0.0.1:9090"),
+		EmbeddingModel: getEnv("EMBEDDING_MODEL", "nomic-embed-text:latest"),
 		AIOJBackendURL: getEnv("AIOJ_BACKEND_URL", "http://127.0.0.1:8080"),
 	}
 }
@@ -69,6 +71,19 @@ func loadEnvFile(path string) {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
+		// Strip inline comments (split by first #)
+		if idx := strings.IndexByte(val, '#'); idx >= 0 {
+			val = strings.TrimSpace(val[:idx])
+		}
+		// Strip surrounding quotes (single or double)
+		if len(val) >= 2 {
+			if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
+				val = val[1 : len(val)-1]
+			}
+		}
+		if val == "" {
+			continue
+		}
 		// Don't override existing env vars
 		if os.Getenv(key) == "" {
 			os.Setenv(key, val)

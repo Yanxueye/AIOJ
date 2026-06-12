@@ -27,11 +27,18 @@ func UpdateMastery(db *gorm.DB, userID uint64) {
 		kpSolved[m.KnowledgePointID]++
 	}
 
-	var allMappings []models.ProblemKnowledgePoint
-	db.Find(&allMappings)
-	kpTotal := make(map[uint64]int)
-	for _, m := range allMappings {
-		kpTotal[m.KnowledgePointID]++
+	// Use SQL GROUP BY instead of loading all rows into memory
+	type kpCount struct {
+		KnowledgePointID uint64
+		Count            int
+	}
+	var counts []kpCount
+	db.Model(&models.ProblemKnowledgePoint{}).
+		Select("knowledge_point_id, COUNT(*) as count").
+		Group("knowledge_point_id").Scan(&counts)
+	kpTotal := make(map[uint64]int, len(counts))
+	for _, c := range counts {
+		kpTotal[c.KnowledgePointID] = c.Count
 	}
 
 	now := time.Now().UTC()

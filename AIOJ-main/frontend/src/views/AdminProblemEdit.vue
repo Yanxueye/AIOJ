@@ -22,21 +22,6 @@
         <el-button type="danger" plain :loading="deleting" @click="handleDelete">删除题目</el-button>
       </template>
     </ProblemForm>
-
-    <div class="card version-card">
-      <div class="version-head">重判任务</div>
-      <div class="job-actions">
-        <el-input v-model="rejudgeReason" placeholder="重判原因，例如更新了隐藏测试或修正了题面" />
-        <el-button type="primary" @click="handleRejudge">创建重判任务</el-button>
-      </div>
-      <el-table :data="rejudgeJobs" size="small" stripe>
-        <el-table-column prop="id" label="任务 ID" width="120" />
-        <el-table-column prop="status" label="状态" width="100" />
-        <el-table-column prop="totalSubmissions" label="提交数" width="100" />
-        <el-table-column prop="processedCount" label="已处理" width="100" />
-        <el-table-column prop="reason" label="原因" min-width="220" />
-      </el-table>
-    </div>
   </div>
 </template>
 
@@ -54,8 +39,6 @@ const problemStore = useProblemStore()
 const problemFormRef = ref(null)
 const submitting = ref(false)
 const deleting = ref(false)
-const rejudgeReason = ref('')
-const rejudgeJobs = ref([])
 
 const problemID = computed(() => route.params.id)
 const initialValue = computed(() => problemStore.currentProblem || {})
@@ -74,8 +57,6 @@ function validateForm(form) {
 
 async function loadProblem() {
   await problemStore.fetchAdminProblem(problemID.value)
-  const jobs = await problemApi.getRejudgeJobs(problemID.value)
-  rejudgeJobs.value = jobs.data.items || []
 }
 
 async function handleSubmit() {
@@ -124,13 +105,6 @@ async function handlePublish() {
   }
 }
 
-async function handleRejudge() {
-  await problemApi.rejudge(problemID.value, { reason: rejudgeReason.value })
-  ElMessage.success('重判任务已创建')
-  rejudgeReason.value = ''
-  await loadProblem()
-}
-
 async function handleDelete() {
   await ElMessageBox.confirm('删除后无法恢复，确认删除当前题目吗？', '删除题目', {
     type: 'warning',
@@ -168,18 +142,5 @@ onMounted(loadProblem)
 }
 .page-header p {
   color: var(--text-secondary);
-}
-.version-card {
-  margin-top: 20px;
-}
-.version-head {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-.job-actions {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
 }
 </style>

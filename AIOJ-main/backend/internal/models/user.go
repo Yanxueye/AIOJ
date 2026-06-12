@@ -64,3 +64,17 @@ type SubmissionTimelineItem struct {
 	Language     string `json:"language"`
 	CreatedAt    string `json:"createdAt"`
 }
+
+// RatingHistory records each rating change for a user.
+type RatingHistory struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID     uint64    `gorm:"index;not null" json:"userId"`
+	OldRating  int       `json:"oldRating"`
+	NewRating  int       `json:"newRating"`
+	Delta      int       `json:"delta"`
+	ProblemID  uint64    `json:"problemId"`
+	Reason     string    `gorm:"type:varchar(64)" json:"reason"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+func (RatingHistory) TableName() string { return "rating_history" }
