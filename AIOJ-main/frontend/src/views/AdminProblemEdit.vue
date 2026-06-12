@@ -23,23 +23,6 @@
       </template>
     </ProblemForm>
 
-    <div v-if="initialValue?.versions?.length" class="card version-card">
-      <div class="version-head">版本历史</div>
-      <el-table :data="initialValue.versions" size="small" stripe>
-        <el-table-column prop="versionNo" label="版本" width="80" />
-        <el-table-column prop="title" label="标题" min-width="220" />
-        <el-table-column prop="difficulty" label="难度" width="100" />
-        <el-table-column prop="createdAt" label="创建时间" min-width="180" />
-        <el-table-column prop="publishedAt" label="发布时间" min-width="180" />
-        <el-table-column label="操作" width="220">
-          <template #default="{ row }">
-            <el-button text type="warning" @click="handlePublishVersion(row.id)">发布此版本</el-button>
-            <el-button text type="primary" @click="handleRollback(row.id)">回滚到此版本</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
-
     <div class="card version-card">
       <div class="version-head">重判任务</div>
       <div class="job-actions">
@@ -135,31 +118,6 @@ async function handlePublish() {
       reviewComment: problemFormRef.value?.form?.reviewComment || ''
     })
     ElMessage.success('题目已发布')
-    await loadProblem()
-  } finally {
-    submitting.value = false
-  }
-}
-
-async function handlePublishVersion(versionID) {
-  submitting.value = true
-  try {
-    await problemApi.publish(problemID.value, {
-      reviewComment: problemFormRef.value?.form?.reviewComment || '',
-      versionId: versionID
-    })
-    ElMessage.success('指定版本已发布')
-    await loadProblem()
-  } finally {
-    submitting.value = false
-  }
-}
-
-async function handleRollback(versionID) {
-  submitting.value = true
-  try {
-    await problemApi.rollback(problemID.value, { versionId: versionID })
-    ElMessage.success('已回滚到指定版本')
     await loadProblem()
   } finally {
     submitting.value = false

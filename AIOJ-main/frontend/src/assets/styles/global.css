@@ -1,62 +1,370 @@
+/* ============================================
+   Glass Garden Theme
+   Green = translucent glass material
+   Amber/honey = interactive accent
+   Warm ivory = base surfaces
+   ============================================ */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 :root {
-  --bg-primary: #f0f2f5;
-  --bg-card: #ffffff;
-  --bg-sidebar: #1a1a2e;
-  --text-primary: #303133;
-  --text-secondary: #606266;
-  --text-muted: #909399;
-  --border-color: #e4e7ed;
-  --accent-blue: #409eff;
-  --accent-green: #67c23a;
-  --accent-red: #f56c6c;
-  --accent-orange: #e6a23c;
-  --accent-purple: #8b5cf6;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
-  --radius-sm: 6px;
-  --radius-md: 10px;
+  /* ── Background: warm ivory layers (transparent for character bg) ── */
+  --bg-primary: rgba(247, 245, 239, 0.75);
+  --bg-card: rgba(255, 255, 255, 0.55);
+  --bg-card-solid: #ffffff;
+  --bg-hover: rgba(240, 237, 229, 0.6);
+  --bg-active: rgba(254, 247, 232, 0.65);
+  --bg-sidebar: #1c1a14;
+  --bg-warm: rgba(250, 248, 242, 0.55);
+  --bg-sage: rgba(244, 246, 239, 0.55);
+  --bg-peach: rgba(254, 249, 243, 0.55);
+
+  /* ── Text: warm charcoal ── */
+  --text-primary: #24201a;
+  --text-secondary: #5c5549;
+  --text-muted: #918a7e;
+  --text-inverse: #ffffff;
+
+  /* ── Border ── */
+  --border-color: #e5e0d6;
+  --border-light: #ede9e0;
+  --border-glass: rgba(82, 196, 26, 0.18);
+  --border-focus: #e8a838;
+
+  /* ── Interactive Accent: amber/honey ── */
+  --accent-primary: #e8a838;
+  --accent-primary-light: #f0c060;
+  --accent-primary-dark: #c48a1e;
+  --accent-primary-bg: #fef8ec;
+  --accent-primary-glow: rgba(232, 168, 56, 0.18);
+
+  /* ── Glass Accent: green only for translucent materials ── */
+  --glass-tint: rgba(82, 196, 26, 0.06);
+  --glass-tint-medium: rgba(82, 196, 26, 0.10);
+  --glass-tint-strong: rgba(82, 196, 26, 0.16);
+  --glass-border: rgba(82, 196, 26, 0.15);
+  --glass-border-strong: rgba(82, 196, 26, 0.28);
+  --glass-glow: rgba(82, 196, 26, 0.12);
+  --glass-green: #52c41a;
+  --glass-green-soft: rgba(82, 196, 26, 0.08);
+
+  /* ── Semantic Colors ── */
+  --accent-blue: #4a90d9;
+  --accent-blue-bg: #f0f5fc;
+  --accent-green: #3da854;
+  --accent-green-bg: #eef8f0;
+  --accent-red: #e05252;
+  --accent-red-bg: #fdf0f0;
+  --accent-orange: #e89830;
+  --accent-orange-bg: #fef6e8;
+  --accent-purple: #8b6cc4;
+  --accent-purple-bg: #f4f0fc;
+  --accent-rose: #d66080;
+  --accent-rose-bg: #fdf0f4;
+  --accent-gold: #d4a017;
+  --accent-gold-bg: #fefce8;
+
+  /* ── Gradient: warm + glass layers ── */
+  --gradient-hero: linear-gradient(135deg, #2d6a1e 0%, #3d8c28 35%, #5aaa38 70%, #78c450 100%);
+  --gradient-hero-overlay: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 100%);
+  --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.60) 0%, rgba(247,245,239,0.65) 100%);
+  --gradient-amber: linear-gradient(135deg, #e8a838 0%, #d4940e 100%);
+  --gradient-warm: linear-gradient(135deg, #fefce8 0%, #fef9f3 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.1) 100%);
+  --gradient-mesh: radial-gradient(ellipse at 20% 50%, rgba(82,196,26,0.06) 0%, transparent 50%),
+                   radial-gradient(ellipse at 80% 20%, rgba(232,168,56,0.05) 0%, transparent 50%),
+                   radial-gradient(ellipse at 50% 80%, rgba(138,92,196,0.04) 0%, transparent 50%);
+
+  /* ── Shadow ── */
+  --shadow-xs: 0 1px 2px rgba(36, 32, 26, 0.04);
+  --shadow-sm: 0 1px 3px rgba(36, 32, 26, 0.06), 0 1px 2px rgba(36, 32, 26, 0.03);
+  --shadow-md: 0 4px 14px rgba(36, 32, 26, 0.07), 0 1px 3px rgba(36, 32, 26, 0.03);
+  --shadow-lg: 0 8px 28px rgba(36, 32, 26, 0.09), 0 2px 6px rgba(36, 32, 26, 0.03);
+  --shadow-xl: 0 16px 48px rgba(36, 32, 26, 0.12);
+  --shadow-glass: 0 4px 20px rgba(82, 196, 26, 0.08), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow-glow: 0 0 24px rgba(232, 168, 56, 0.2);
+  --shadow-card: 0 1px 3px rgba(36,32,26,0.04), 0 0 0 1px rgba(36,32,26,0.02);
+
+  /* ── Radius ── */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* ── Typography ── */
+  --font-sans: 'DM Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-display: 'DM Sans', 'Noto Sans SC', sans-serif;
+
+  /* ── Editor ── */
+  --editor-bg: #1c1a14;
+  --editor-surface: #141210;
+  --editor-border: #2a2720;
+  --editor-text: #e5e0d6;
+  --editor-line-number: #8a837a;
+
+  /* ── Misc ── */
+  --code-bg: #f5f3ed;
+  --scrollbar-thumb: #d0c9be;
+  --scrollbar-thumb-hover: #b0a898;
+  --navbar-bg: rgba(255, 253, 248, 0.55);
+  --input-bg: rgba(255, 255, 255, 0.9);
+  --tag-bg: #fef8ec;
+  --overlay-bg: rgba(36, 32, 26, 0.45);
+
+  /* ── Heatmap ── */
+  --heatmap-empty: #eae6dc;
+  --heatmap-L1: #d4edca;
+  --heatmap-L2: #95de64;
+  --heatmap-L3: #52c41a;
+  --heatmap-L4: #2d8c10;
+
+  /* ── Transition ── */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+  --transition-slow: 0.35s ease;
 }
 
-* {
+/* ============================================
+   Dark Mode — Night Glass
+   ============================================ */
+[data-theme="dark"] {
+  --bg-primary: rgba(17, 16, 8, 0.82);
+  --bg-card: rgba(28, 26, 20, 0.55);
+  --bg-card-solid: #1c1a14;
+  --bg-hover: rgba(36, 33, 24, 0.6);
+  --bg-active: rgba(42, 38, 24, 0.65);
+  --bg-sidebar: #0a0908;
+  --bg-warm: rgba(24, 22, 18, 0.55);
+  --bg-sage: rgba(26, 28, 20, 0.55);
+  --bg-peach: rgba(28, 24, 20, 0.55);
+
+  --text-primary: #e8e4da;
+  --text-secondary: #a8a090;
+  --text-muted: #605848;
+  --text-inverse: #111008;
+
+  --border-color: #2e2a22;
+  --border-light: #221f1a;
+  --border-glass: rgba(82, 196, 26, 0.12);
+  --border-focus: #f0c060;
+
+  --accent-primary: #f0c060;
+  --accent-primary-light: #f5d080;
+  --accent-primary-dark: #e8a838;
+  --accent-primary-bg: #2a2418;
+  --accent-primary-glow: rgba(240, 192, 96, 0.2);
+
+  --glass-tint: rgba(82, 196, 26, 0.04);
+  --glass-tint-medium: rgba(82, 196, 26, 0.07);
+  --glass-tint-strong: rgba(82, 196, 26, 0.12);
+  --glass-border: rgba(82, 196, 26, 0.10);
+  --glass-border-strong: rgba(82, 196, 26, 0.20);
+  --glass-glow: rgba(82, 196, 26, 0.08);
+  --glass-green: #73d13d;
+  --glass-green-soft: rgba(82, 196, 26, 0.06);
+
+  --accent-blue: #6aade0;
+  --accent-blue-bg: #1a2230;
+  --accent-green: #5cc46a;
+  --accent-green-bg: #1a2418;
+  --accent-red: #e87070;
+  --accent-red-bg: #2a1818;
+  --accent-orange: #f0a840;
+  --accent-orange-bg: #2a2218;
+  --accent-purple: #a888e0;
+  --accent-purple-bg: #221a30;
+  --accent-rose: #e07898;
+  --accent-rose-bg: #2a1820;
+  --accent-gold: #f0c060;
+  --accent-gold-bg: #2a2418;
+
+  --gradient-hero: linear-gradient(135deg, #1a3a10 0%, #245018 40%, #2d6a1e 100%);
+  --gradient-card: linear-gradient(180deg, rgba(28,26,20,0.60) 0%, rgba(24,22,18,0.65) 100%);
+  --gradient-amber: linear-gradient(135deg, #f0c060 0%, #d4940e 100%);
+  --gradient-warm: linear-gradient(135deg, #2a2418 0%, #1a1c14 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
+  --gradient-mesh: radial-gradient(ellipse at 20% 50%, rgba(82,196,26,0.04) 0%, transparent 50%),
+                   radial-gradient(ellipse at 80% 20%, rgba(232,168,56,0.03) 0%, transparent 50%),
+                   radial-gradient(ellipse at 50% 80%, rgba(138,92,196,0.03) 0%, transparent 50%);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --shadow-glass: 0 4px 20px rgba(82, 196, 26, 0.06), 0 1px 4px rgba(0,0,0,0.2);
+  --shadow-glow: 0 0 28px rgba(240, 192, 96, 0.2);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.03);
+
+  --code-bg: #1a1814;
+  --scrollbar-thumb: #383428;
+  --scrollbar-thumb-hover: #484438;
+  --navbar-bg: rgba(17, 16, 8, 0.88);
+  --input-bg: rgba(28, 26, 20, 0.9);
+  --tag-bg: #2a2418;
+  --overlay-bg: rgba(0, 0, 0, 0.65);
+
+  --editor-bg: #0e0d08;
+  --editor-surface: #0a0908;
+  --editor-border: #1c1a14;
+  --editor-text: #d8d4ca;
+  --editor-line-number: #504838;
+
+  --heatmap-empty: #242118;
+  --heatmap-L1: #1a2e14;
+  --heatmap-L2: #2d8c10;
+  --heatmap-L3: #52c41a;
+  --heatmap-L4: #95de64;
+}
+
+/* ============================================
+   Element Plus Theme Overrides
+   ============================================ */
+:root {
+  --el-color-primary: #e8a838;
+  --el-color-primary-light-3: #f0c060;
+  --el-color-primary-light-5: #f5d080;
+  --el-color-primary-light-7: #f8e0a0;
+  --el-color-primary-light-8: #faf0c8;
+  --el-color-primary-light-9: #fef8ec;
+  --el-color-primary-dark-2: #c48a1e;
+  --el-bg-color: rgba(255, 255, 255, 0.9);
+  --el-bg-color-page: #f7f5ef;
+  --el-text-color-primary: #24201a;
+  --el-text-color-regular: #5c5549;
+  --el-text-color-secondary: #918a7e;
+  --el-border-color: #e5e0d6;
+  --el-border-color-light: #ede9e0;
+  --el-fill-color-blank: rgba(255, 255, 255, 0.9);
+  --el-fill-color-light: #f7f5ef;
+  --el-font-family: 'DM Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+[data-theme="dark"] {
+  --el-color-primary: #f0c060;
+  --el-color-primary-light-3: #f5d080;
+  --el-color-primary-light-5: #f8e0a0;
+  --el-color-primary-light-7: #faf0c8;
+  --el-color-primary-light-8: #fef8ec;
+  --el-color-primary-light-9: #2a2418;
+  --el-color-primary-dark-2: #e8a838;
+  --el-bg-color: rgba(28, 26, 20, 0.9);
+  --el-bg-color-page: #111008;
+  --el-text-color-primary: #e8e4da;
+  --el-text-color-regular: #a8a090;
+  --el-text-color-secondary: #605848;
+  --el-border-color: #2e2a22;
+  --el-border-color-light: #221f1a;
+  --el-fill-color-blank: rgba(28, 26, 20, 0.9);
+  --el-fill-color-light: #1c1a14;
+  --el-mask-color: rgba(0, 0, 0, 0.65);
+  --el-box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-sans);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: transparent;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+  transition: color var(--transition-normal);
+  overflow-x: hidden;
+  min-height: 100vh;
 }
 
 a {
   text-decoration: none;
   color: inherit;
+  transition: color var(--transition-fast);
 }
 
+img { max-width: 100%; height: auto; }
+code, pre { font-family: var(--font-mono); }
+
+/* ============================================
+   Layout Helpers
+   ============================================ */
 .page-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 28px 24px;
+  padding-top: 88px;
 }
 
+/* ── Glass Card — the signature material ── */
 .card {
   background: var(--bg-card);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-card);
   padding: 24px;
+  border: 1px solid rgba(255,255,255,0.5);
+  transition: background var(--transition-normal), border-color var(--transition-normal), box-shadow var(--transition-normal), transform var(--transition-fast);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--glass-border);
 }
 
 .card-title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 16px;
+  letter-spacing: -0.01em;
 }
 
+/* ── Glass Panel — stronger glass effect ── */
+.glass-panel {
+  background: var(--glass-tint-medium);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glass);
+}
+
+/* ── Glass Badge — small glass chip ── */
+.glass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: var(--glass-tint-medium);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--glass-green);
+}
+
+/* ============================================
+   Status Colors
+   ============================================ */
 .status-accepted { color: var(--accent-green); font-weight: 600; }
 .status-wrong { color: var(--accent-red); font-weight: 600; }
 .status-tle { color: var(--accent-orange); font-weight: 600; }
@@ -71,24 +379,184 @@ a {
 .difficulty-medium { color: var(--accent-orange); }
 .difficulty-hard { color: var(--accent-red); }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #909399;
+/* ============================================
+   Scrollbar
+   ============================================ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+
+/* ============================================
+   Selection
+   ============================================ */
+::selection {
+  background: var(--accent-primary-glow);
+  color: var(--accent-primary-dark);
 }
 
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.25s ease;
+/* ============================================
+   Transitions
+   ============================================ */
+.fade-enter-active, .fade-leave-active { transition: opacity var(--transition-normal); }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.slide-up-enter-from, .slide-up-leave-to { transform: translateY(20px); opacity: 0; }
+
+/* ============================================
+   Focus
+   ============================================ */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
 }
-.fade-enter-from, .fade-leave-to {
+
+/* ============================================
+   Page Header
+   ============================================ */
+.page-header {
+  margin-bottom: 24px;
+}
+.page-header h2 {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+.page-header .page-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* ============================================
+   Mesh Gradient Background — for featured pages
+   ============================================ */
+.mesh-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.mesh-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(82, 196, 26, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 85% 70%, rgba(232, 168, 56, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 50% at 50% 90%, rgba(138, 92, 196, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 40% at 70% 10%, rgba(74, 144, 217, 0.04) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="dark"] .mesh-bg::before {
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(82, 196, 26, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 85% 70%, rgba(232, 168, 56, 0.04) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 50% at 50% 90%, rgba(138, 92, 196, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 40% at 70% 10%, rgba(74, 144, 217, 0.03) 0%, transparent 50%);
+}
+
+/* ============================================
+   Character Decoration — Mutsumi
+   ============================================ */
+.character-decoration {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  width: 420px;
+  height: 520px;
+  background-image: url('/muzimi.jpg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: bottom right;
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+  mask-image: linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 50%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 50%, transparent 100%);
+  transition: opacity var(--transition-slow);
+}
+
+[data-theme="dark"] .character-decoration {
+  opacity: 0.08;
+  filter: brightness(0.8);
+}
+
+/* For auth pages — centered, larger */
+.character-decoration--auth {
+  bottom: 0;
+  right: 50%;
+  transform: translateX(65%);
+  width: 500px;
+  height: 600px;
+  opacity: 0.10;
+}
+
+[data-theme="dark"] .character-decoration--auth {
+  opacity: 0.06;
+}
+
+/* ============================================
+   Floating Glass Orbs — decorative
+   ============================================ */
+.glass-orb {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--glass-tint-medium);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glass-orb--1 {
+  width: 200px;
+  height: 200px;
+  top: 10%;
+  right: -60px;
+  opacity: 0.5;
+}
+
+.glass-orb--2 {
+  width: 120px;
+  height: 120px;
+  bottom: 20%;
+  left: -40px;
+  opacity: 0.4;
+}
+
+.glass-orb--3 {
+  width: 80px;
+  height: 80px;
+  top: 40%;
+  right: 15%;
+  opacity: 0.3;
+}
+
+/* ============================================
+   Glass Card Enhanced — with glow border
+   ============================================ */
+.card-glow {
+  position: relative;
+}
+
+.card-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--glass-border-strong), transparent 40%, transparent 60%, var(--accent-primary-glow));
+  z-index: -1;
   opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.card-glow:hover::after {
+  opacity: 1;
 }

@@ -212,8 +212,8 @@ function formatTime(value) {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #1e1e2e;
-  border-bottom: 1px solid #2d2d3f;
+  background: var(--editor-bg);
+  border-bottom: 1px solid var(--editor-border);
 }
 .toolbar-spacer {
   flex: 1;
@@ -222,7 +222,7 @@ function formatTime(value) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #a6e3a1;
+  color: var(--accent-green);
   font-size: 12px;
   white-space: nowrap;
 }

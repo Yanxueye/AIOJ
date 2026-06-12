@@ -10,6 +10,7 @@ import (
 
 	"github.com/terminaloj/backend/internal/judger"
 	"github.com/terminaloj/backend/internal/models"
+	"github.com/terminaloj/backend/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -248,6 +249,8 @@ func (w *Worker) judgeSubmission(ctx context.Context, sub *models.Submission) er
 			w.DB.Model(&models.Problem{}).Where("id = ?", sub.ProblemID).
 				UpdateColumn("accept_count", gorm.Expr("accept_count + 1"))
 			w.updateStudyPlanProgress(sub.UserID, sub.ProblemID, sub.ID)
+			w.updateUserRating(sub.UserID, sub.ProblemID)
+			utils.UpdateMastery(w.DB, sub.UserID)
 		}
 	}
 	return nil
@@ -330,5 +333,34 @@ func (w *Worker) updateStudyPlanProgress(userID, problemID, submissionID uint64)
 	if err == nil {
 		checkin.Count++
 		_ = w.DB.Save(&checkin).Error
+	}
+}
+
+func (w *Worker) updateUserRating(userID, problemID uint64) {
+	var user models.User
+	if err := w.DB.First(&user, userID).Error; err != nil {
+		log.Printf("[worker] failed to load user %d for rating update: %v", userID, err)
+		return
+	}
+
+	var problem models.Problem
+	if err := w.DB.First(&problem, problemID).Error; err != nil {
+		log.Printf("[worker] failed to load problem %d for rating update: %v", problemID, err)
+		return
+	}
+
+	problemRating := problem.Rating
+	if problemRating <= 0 {
+		problemRating = problem.DifficultyScore
+	}
+	if problemRating <= 0 {
+		problemRating = utils.DefaultProblemRating
+	}
+
+	newRating := utils.CalculateUserRatingUpdate(user.Rating, problemRating)
+	if newRating != user.Rating {
+		if err := w.DB.Model(&user).UpdateColumn("rating", newRating).Error; err != nil {
+			log.Printf("[worker] failed to update rating for user %d: %v", userID, err)
+		}
 	}
 }

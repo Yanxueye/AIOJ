@@ -55,33 +55,39 @@ function showDetail(item) {
   align-items: center;
   gap: 8px;
 }
+
 .announcement-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
 }
+
 .announcement-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 11px 14px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background var(--transition-fast);
 }
+
 .announcement-item:hover {
-  background: #f5f7fa;
+  background: var(--bg-hover);
 }
+
 .announcement-title {
   flex: 1;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
 }
+
 .announcement-date {
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
 }
+
 .loading-wrap {
   padding: 16px 0;
 }

@@ -1,8 +1,8 @@
 <template>
   <div class="card">
     <el-form label-width="120px" @submit.prevent>
-      <el-form-item label="题目 ID">
-        <el-input-number v-model="form.id" :min="1" :disabled="disableID" />
+      <el-form-item v-if="!isCreate" label="题目 ID">
+        <el-tag size="large">#{{ form.id }}</el-tag>
       </el-form-item>
 
       <el-form-item label="标题">
@@ -144,6 +144,10 @@ const props = defineProps({
   disableID: {
     type: Boolean,
     default: false
+  },
+  isCreate: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -166,7 +170,7 @@ watch(tagsText, value => {
 
 function createDefaultForm() {
   return {
-    id: 2001,
+    id: 0,
     title: '',
     difficulty: '简单',
     difficultyScore: 800,
@@ -268,7 +272,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: #fafbfc;
+  background: var(--bg-hover);
 }
 .case-head {
   display: flex;

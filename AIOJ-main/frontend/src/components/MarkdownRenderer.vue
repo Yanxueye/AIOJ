@@ -40,15 +40,15 @@ const rendered = computed(() => renderMarkdown(props.content))
   margin: 8px 0;
 }
 .markdown-body code {
-  background: #f6f8fa;
+  background: var(--bg-hover);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.9em;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
 }
 .markdown-body pre {
-  background: #1e1e2e;
-  color: #cdd6f4;
+  background: var(--editor-bg);
+  color: var(--editor-text);
   border-radius: var(--radius-sm);
   padding: 16px;
   overflow-x: auto;
@@ -65,7 +65,7 @@ const rendered = computed(() => renderMarkdown(props.content))
   border-left: 4px solid var(--accent-blue);
   padding: 8px 16px;
   margin: 12px 0;
-  background: #f0f5ff;
+  background: var(--accent-primary-bg);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--text-secondary);
 }
@@ -90,7 +90,7 @@ const rendered = computed(() => renderMarkdown(props.content))
   text-align: left;
 }
 .markdown-body th {
-  background: #f5f7fa;
+  background: var(--bg-hover);
   font-weight: 600;
 }
 .markdown-body .katex-display {

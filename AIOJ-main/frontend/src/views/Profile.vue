@@ -7,14 +7,14 @@
     <div v-loading="loading" class="profile-layout">
       <div class="profile-sidebar">
         <div class="card user-card">
-          <div class="user-avatar">
-            <el-avatar :size="80" style="background: linear-gradient(135deg, #667eea, #764ba2); font-size: 32px">
+          <div class="user-avatar-wrap">
+            <el-avatar :size="80" class="user-avatar-main">
               {{ profile?.username?.charAt(0).toUpperCase() }}
             </el-avatar>
+            <div class="avatar-ring" />
           </div>
           <h3 class="user-name">{{ profile?.username }}</h3>
           <p class="user-bio">{{ profile?.bio || '这个人很懒，什么也没写' }}</p>
-          <el-divider />
           <div class="user-meta">
             <div class="meta-item">
               <el-icon><Message /></el-icon>
@@ -26,23 +26,21 @@
             </div>
           </div>
           <el-divider />
-          <el-button type="primary" plain style="width: 100%" @click="editDialogVisible = true">
+          <el-button type="primary" plain round style="width: 100%" @click="editDialogVisible = true">
             <el-icon><Edit /></el-icon>编辑资料
           </el-button>
-          <el-button style="width: 100%; margin-top: 8px; margin-left: 0" @click="$router.push('/ai')">
+          <el-button style="width: 100%; margin-top: 8px; margin-left: 0" round @click="$router.push('/ai')">
             <el-icon><MagicStick /></el-icon>AI 训练
-          </el-button>
-          <el-button style="width: 100%; margin-top: 8px; margin-left: 0" @click="$router.push('/my/solutions')">
-            <el-icon><Document /></el-icon>我的题解
           </el-button>
         </div>
       </div>
 
       <div class="profile-main">
+        <!-- Stats Overview -->
         <div class="stats-overview">
           <div class="stat-card card">
-            <div class="stat-icon" style="background: #ecf5ff; color: #409eff">
-              <el-icon :size="24"><Trophy /></el-icon>
+            <div class="stat-icon" style="background: var(--accent-blue-bg); color: var(--accent-blue)">
+              <el-icon :size="22"><Trophy /></el-icon>
             </div>
             <div>
               <div class="stat-value">{{ profile?.rating || 0 }}</div>
@@ -50,8 +48,8 @@
             </div>
           </div>
           <div class="stat-card card">
-            <div class="stat-icon" style="background: #f0f9eb; color: #67c23a">
-              <el-icon :size="24"><CircleCheckFilled /></el-icon>
+            <div class="stat-icon" style="background: var(--accent-green-bg); color: var(--accent-green)">
+              <el-icon :size="22"><CircleCheckFilled /></el-icon>
             </div>
             <div>
               <div class="stat-value">{{ profile?.solvedCount || 0 }}</div>
@@ -59,8 +57,8 @@
             </div>
           </div>
           <div class="stat-card card">
-            <div class="stat-icon" style="background: #fef0f0; color: #f56c6c">
-              <el-icon :size="24"><Upload /></el-icon>
+            <div class="stat-icon" style="background: var(--accent-red-bg); color: var(--accent-red)">
+              <el-icon :size="22"><Upload /></el-icon>
             </div>
             <div>
               <div class="stat-value">{{ profile?.totalSubmissions || 0 }}</div>
@@ -68,8 +66,8 @@
             </div>
           </div>
           <div class="stat-card card">
-            <div class="stat-icon" style="background: #fdf6ec; color: #e6a23c">
-              <el-icon :size="24"><TrendCharts /></el-icon>
+            <div class="stat-icon" style="background: var(--accent-orange-bg); color: var(--accent-orange)">
+              <el-icon :size="22"><TrendCharts /></el-icon>
             </div>
             <div>
               <div class="stat-value">{{ profile?.acceptRate || 0 }}%</div>
@@ -78,12 +76,19 @@
           </div>
         </div>
 
+        <!-- Heatmap -->
+        <div class="card section-card">
+          <ContributionHeatmap />
+        </div>
+
+        <!-- Charts -->
         <StatsCharts
           v-if="profile"
           :difficulty-data="profile.solvedByDifficulty || {}"
           :algorithm-data="profile.solvedByAlgorithm || {}"
         />
 
+        <!-- Favorites -->
         <div class="card section-card">
           <div class="section-title">收藏题目</div>
           <div v-if="profile?.favorites?.length" class="favorite-list">
@@ -104,6 +109,7 @@
           <el-empty v-else description="还没有收藏题目" :image-size="80" />
         </div>
 
+        <!-- Recent Submissions -->
         <div class="card section-card">
           <div class="section-title">最近提交</div>
           <div v-if="profile?.recentSubmissions?.length" class="timeline-list">
@@ -123,6 +129,7 @@
       </div>
     </div>
 
+    <!-- Edit Dialog -->
     <el-dialog v-model="editDialogVisible" title="编辑个人资料" width="480px">
       <el-form :model="editForm" label-width="80px">
         <el-form-item label="用户名">
@@ -148,6 +155,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
 import StatsCharts from '@/components/StatsCharts.vue'
+import ContributionHeatmap from '@/components/ContributionHeatmap.vue'
 
 const userStore = useUserStore()
 
@@ -203,35 +211,60 @@ function statusClass(status) {
 .page-header {
   margin-bottom: 20px;
 }
-.page-header h2 {
-  font-size: 24px;
-  font-weight: 700;
-}
+
 .profile-layout {
   display: grid;
   grid-template-columns: 280px 1fr;
   gap: 24px;
 }
+
 .user-card {
   text-align: center;
+  background: var(--gradient-card);
 }
-.user-avatar {
+
+.user-avatar-wrap {
+  position: relative;
+  display: inline-block;
   margin-bottom: 16px;
 }
+
+.user-avatar-main {
+  background: var(--gradient-amber) !important;
+  color: #fff !important;
+  font-size: 32px !important;
+  font-weight: 700;
+  position: relative;
+  z-index: 1;
+}
+
+.avatar-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-primary-bg);
+  z-index: 0;
+}
+
 .user-name {
   font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 8px;
+  font-weight: 800;
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
 }
+
 .user-bio {
   font-size: 13px;
   color: var(--text-muted);
+  margin-bottom: 16px;
 }
+
 .user-meta {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+
 .meta-item {
   display: flex;
   align-items: center;
@@ -245,64 +278,85 @@ function statusClass(status) {
   flex-direction: column;
   gap: 20px;
 }
+
 .section-card {
   padding: 20px;
 }
+
 .section-title {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   margin-bottom: 14px;
+  letter-spacing: -0.01em;
 }
+
 .stats-overview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 14px;
 }
+
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
+  gap: 14px;
+  padding: 18px;
 }
+
 .stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
+
 .stat-value {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 800;
   line-height: 1.2;
+  letter-spacing: -0.02em;
 }
+
 .stat-label {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-muted);
 }
+
 .favorite-list,
 .timeline-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
+
 .favorite-item,
 .timeline-item {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
-  background: #fafbfc;
+  background: var(--bg-warm);
+  transition: border-color var(--transition-fast);
 }
+
+.favorite-item:hover,
+.timeline-item:hover {
+  border-color: var(--accent-primary);
+}
+
 .favorite-item {
   display: block;
 }
+
 .favorite-title,
 .timeline-problem {
   font-weight: 600;
   color: var(--text-primary);
+  font-size: 14px;
 }
+
 .favorite-meta,
 .timeline-meta {
   margin-top: 6px;

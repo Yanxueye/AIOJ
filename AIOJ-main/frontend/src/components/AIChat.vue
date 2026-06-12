@@ -23,7 +23,7 @@
 
     <div ref="messagesRef" class="chat-messages">
       <div v-if="messages.length === 0" class="chat-empty">
-        <el-icon :size="48" color="#c0c4cc"><ChatDotRound /></el-icon>
+        <el-icon :size="48" :style="{ color: 'var(--text-muted)' }"><ChatDotRound /></el-icon>
         <p>有什么算法问题？向 AI 助手提问吧！</p>
       </div>
       <div
@@ -150,7 +150,7 @@ async function handleDiagnose() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #fafbfc;
+  background: var(--bg-hover);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
 }
@@ -160,7 +160,7 @@ async function handleDiagnose() {
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
-  background: #fff;
+  background: var(--bg-card);
 }
 .chat-title {
   display: flex;
@@ -203,13 +203,13 @@ async function handleDiagnose() {
   flex-direction: row-reverse;
 }
 .message-user .message-content {
-  background: var(--accent-blue);
+  background: var(--gradient-amber);
   color: #fff;
   border-radius: 12px 2px 12px 12px;
 }
 .message-assistant .message-content {
-  background: #fff;
-  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
   border-radius: 2px 12px 12px 12px;
 }
 .message-content {
@@ -228,7 +228,7 @@ async function handleDiagnose() {
   gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid var(--border-color);
-  background: #fff;
+  background: var(--bg-card);
 }
 .chat-input :deep(.el-textarea__inner) {
   box-shadow: none;
@@ -243,7 +243,7 @@ async function handleDiagnose() {
 .typing-indicator span {
   width: 8px;
   height: 8px;
-  background: var(--accent-purple);
+  background: var(--accent-gold);
   border-radius: 50%;
   animation: typing 1.4s ease-in-out infinite;
 }

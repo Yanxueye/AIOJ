@@ -12,13 +12,10 @@
         <el-table-column prop="email" label="邮箱" min-width="220" />
         <el-table-column prop="rating" label="Rating" width="100" />
         <el-table-column prop="registeredAt" label="注册时间" width="140" />
-        <el-table-column label="角色" width="220">
+        <el-table-column label="角色" width="180">
           <template #default="{ row }">
-            <el-select v-model="row.role" style="width: 180px" @change="value => updateRole(row, value)">
+            <el-select v-model="row.role" style="width: 140px" @change="value => updateRole(row, value)">
               <el-option label="普通用户" value="user" />
-              <el-option label="题目编辑" value="problem_editor" />
-              <el-option label="审核员" value="reviewer" />
-              <el-option label="运维员" value="operator" />
               <el-option label="管理员" value="admin" />
             </el-select>
           </template>

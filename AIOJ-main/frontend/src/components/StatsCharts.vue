@@ -28,7 +28,7 @@ const props = defineProps({
   algorithmData: { type: Object, default: () => ({}) }
 })
 
-const DIFF_COLORS = { '简单': '#67c23a', '中等': '#e6a23c', '困难': '#f56c6c' }
+const DIFF_COLORS = { '简单': '#22c55e', '中等': '#f59e0b', '困难': '#ef4444' }
 
 const difficultyOption = computed(() => ({
   tooltip: { trigger: 'item', formatter: '{b}: {c} 题 ({d}%)' },
@@ -66,8 +66,8 @@ const algorithmOption = computed(() => {
         borderRadius: [0, 4, 4, 0],
         color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
           colorStops: [
-            { offset: 0, color: '#409eff' },
-            { offset: 1, color: '#8b5cf6' }
+            { offset: 0, color: '#52c41a' },
+            { offset: 1, color: '#389e0d' }
           ]
         }
       },

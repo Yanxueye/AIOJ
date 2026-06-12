@@ -9,7 +9,6 @@ export const useUserStore = defineStore('user', () => {
   const isLoggedIn = computed(() => !!token.value)
   const username = computed(() => userInfo.value?.username || '')
   const isAdmin = computed(() => userInfo.value?.role === 'admin')
-  const canManageProblems = computed(() => ['problem_editor', 'reviewer', 'operator', 'admin'].includes(userInfo.value?.role))
 
   function setAuth(tokenVal, user) {
     token.value = tokenVal
@@ -55,7 +54,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    token, userInfo, isLoggedIn, isAdmin, canManageProblems, username,
+    token, userInfo, isLoggedIn, isAdmin, username,
     login, register, logout, fetchProfile, updateProfile, setAuth
   }
 })

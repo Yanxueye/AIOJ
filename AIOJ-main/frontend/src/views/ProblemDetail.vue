@@ -1,61 +1,71 @@
 <template>
   <div class="problem-detail-page">
+    <!-- Toolbar -->
     <div class="detail-toolbar">
       <div class="toolbar-left">
         <el-button text @click="$router.push('/problems')">
-          <el-icon><ArrowLeft /></el-icon>返回题目列表
+          <el-icon><ArrowLeft /></el-icon>返回
         </el-button>
         <el-divider direction="vertical" />
         <span v-if="problem" class="problem-id">#{{ problem.id }}</span>
-        <span v-if="problem" class="problem-name">{{ problem.title }}</span>
-        <el-tag v-if="problem" :type="diffTagType(problem.difficulty)" size="small">
+        <span v-if="problem" class="problem-title">{{ problem.title }}</span>
+        <el-tag v-if="problem" :type="diffTagType(problem.difficulty)" size="small" effect="plain">
           {{ problem.difficulty }}
         </el-tag>
       </div>
       <div class="toolbar-right">
-        <el-button :type="problem?.favorite ? 'warning' : 'default'" @click="toggleFavorite">
-          <el-icon><Star /></el-icon>{{ problem?.favorite ? '取消收藏' : '收藏题目' }}
+        <el-button :type="problem?.favorite ? 'warning' : 'default'" text @click="toggleFavorite">
+          <el-icon><Star /></el-icon>
         </el-button>
-        <el-button :loading="running" @click="handleRun">
-          <el-icon><VideoPlay /></el-icon>运行代码
-        </el-button>
-        <el-button type="success" :loading="submitting" @click="handleSubmit">
-          <el-icon><Position /></el-icon>提交代码
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">
+          提交
         </el-button>
       </div>
     </div>
 
+    <!-- Main panels -->
     <div v-loading="problemStore.loading" class="detail-panels">
-      <div class="panel panel-left" :style="{ flex: panelFlex.problem }">
+      <!-- LEFT PANEL -->
+      <div class="panel panel-left" :style="{ flex: panelFlex.left }">
+        <!-- Tab bar: show normal tabs OR result tab -->
         <div class="panel-tabs">
-          <button :class="['tab-btn', { active: activeTab === 'description' }]" @click="activeTab = 'description'">题目描述</button>
-          <button :class="['tab-btn', { active: activeTab === 'solutions' }]" @click="activeTab = 'solutions'">题解</button>
-          <button :class="['tab-btn', { active: activeTab === 'submissions' }]" @click="activeTab = 'submissions'">提交记录</button>
+          <template v-if="!resultView">
+            <button :class="['tab-btn', { active: leftTab === 'description' }]" @click="leftTab = 'description'">题目描述</button>
+            <button :class="['tab-btn', { active: leftTab === 'solutions' }]" @click="leftTab = 'solutions'">题解</button>
+            <button :class="['tab-btn', { active: leftTab === 'submissions' }]" @click="leftTab = 'submissions'">提交记录</button>
+          </template>
+          <template v-else>
+            <button class="tab-btn active result-tab">
+              <span :class="statusIconClass(resultView.status)" class="result-status-icon">●</span>
+              {{ resultView.source === 'run' ? '运行结果' : '提交结果' }}
+            </button>
+            <button class="tab-btn close-result" @click="resultView = null">
+              <el-icon><Close /></el-icon>
+            </button>
+          </template>
         </div>
 
+        <!-- Left panel body -->
         <div class="panel-body">
-          <template v-if="activeTab === 'description'">
+          <!-- DESCRIPTION TAB -->
+          <template v-if="!resultView && leftTab === 'description'">
             <div class="panel-meta" v-if="problem">
-              <el-tag size="small" type="info">时间限制: {{ problem.timeLimit }}ms</el-tag>
-              <el-tag size="small" type="info">内存限制: {{ problem.memoryLimit }}MB</el-tag>
-              <el-tag size="small" type="info">输出限制: {{ problem.outputLimitKb || 1024 }}KB</el-tag>
+              <el-tag size="small" type="info">时间: {{ problem.timeLimit }}ms</el-tag>
+              <el-tag size="small" type="info">内存: {{ problem.memoryLimit }}MB</el-tag>
             </div>
-
             <section class="problem-section">
               <MarkdownRenderer v-if="problem?.content" :content="problem.content" />
               <el-empty v-else description="题面内容待补全" :image-size="80" />
             </section>
-
             <section v-if="problem?.constraints" class="problem-section">
               <div class="section-title">约束条件</div>
               <MarkdownRenderer :content="problem.constraints" />
             </section>
-
             <section v-if="problem?.samples?.length" class="problem-section">
-              <div class="section-title">公开样例</div>
+              <div class="section-title">示例</div>
               <div class="sample-list">
                 <div v-for="item in problem.samples" :key="item.caseNo" class="sample-card">
-                  <div class="sample-head">Sample {{ item.caseNo }}</div>
+                  <div class="sample-head">示例 {{ item.caseNo }}</div>
                   <div class="sample-grid">
                     <div>
                       <div class="sample-label">输入</div>
@@ -73,178 +83,359 @@
                 </div>
               </div>
             </section>
-
             <section v-if="problem?.relatedProblems?.length" class="problem-section">
-              <div class="section-title">相似题推荐</div>
+              <div class="section-title">相似题目</div>
               <div class="related-list">
-                <router-link
-                  v-for="item in problem.relatedProblems"
-                  :key="item.id"
-                  :to="`/problem/${item.id}`"
-                  class="related-item"
-                >
-                  <div class="related-title">#{{ item.id }} {{ item.title }}</div>
-                  <div class="related-meta">
-                    <el-tag :type="diffTagType(item.difficulty)" size="small" effect="plain">{{ item.difficulty }}</el-tag>
-                    <el-tag v-for="tag in item.tags" :key="tag" size="small" type="info" effect="plain">{{ tag }}</el-tag>
-                  </div>
+                <router-link v-for="item in problem.relatedProblems" :key="item.id" :to="`/problem/${item.id}`" class="related-item">
+                  <span class="related-title">#{{ item.id }} {{ item.title }}</span>
+                  <el-tag :type="diffTagType(item.difficulty)" size="small" effect="plain">{{ item.difficulty }}</el-tag>
                 </router-link>
               </div>
             </section>
           </template>
 
-          <template v-else-if="activeTab === 'solutions'">
-            <section class="problem-section">
-              <div class="section-title">官方题解</div>
-              <MarkdownRenderer v-if="problem?.editorial" :content="problem.editorial" />
-              <el-empty v-else description="暂无官方题解" :image-size="80" />
-            </section>
-
+          <!-- SOLUTIONS TAB -->
+          <template v-else-if="!resultView && leftTab === 'solutions'">
             <section class="problem-section">
               <div class="section-title section-row">
-                <span>我的题解</span>
+                <span>题解 ({{ allSolutions.length }})</span>
                 <el-button type="primary" plain size="small" @click="goToMySolutionEditor">
-                  {{ problem?.mySolution?.id ? '编辑我的题解' : '新增题解' }}
+                  <el-icon><EditPen /></el-icon>发布题解
                 </el-button>
               </div>
-              <el-empty description="点击按钮进入独立题解编辑页" :image-size="70" />
-            </section>
-
-            <section class="problem-section">
-              <div class="section-title">用户题解</div>
-              <div v-if="problem?.solutions?.length" class="solution-list">
-                <router-link v-for="item in problem.solutions" :key="item.id" :to="`/solutions/${item.id}`" class="solution-item solution-link-card">
+              <div v-if="allSolutions.length" class="solution-list">
+                <div v-for="item in allSolutions" :key="item.id" class="solution-item" @click="viewSolution(item)">
                   <div class="solution-head">
-                    <div>
-                      <div class="solution-title">{{ item.title }}</div>
-                      <div class="solution-meta">{{ item.username }} · {{ item.language }} · {{ item.updatedAt }}</div>
+                    <div class="solution-title-row">
+                      <el-tag v-if="item.isOfficial" type="success" size="small" effect="dark">官方</el-tag>
+                      <span class="solution-title">{{ item.title }}</span>
+                    </div>
+                    <div class="solution-meta">
+                      <span>{{ item.username }}</span>
+                      <span>{{ item.language }}</span>
+                      <span>{{ item.updatedAt }}</span>
                     </div>
                   </div>
-                  <div class="solution-preview">{{ item.content.slice(0, 160) }}<span v-if="item.content.length > 160">...</span></div>
-                </router-link>
+                  <div class="solution-preview">{{ item.content.slice(0, 150) }}<span v-if="item.content.length > 150">...</span></div>
+                  <div class="solution-actions">
+                    <el-button v-if="item.id > 0" size="small" :type="item.liked ? 'primary' : 'default'" text @click.stop="handleLike(item)">
+                      <el-icon><Star /></el-icon> {{ item.likeCount || 0 }}
+                    </el-button>
+                    <el-button v-if="item.id > 0 && item.userId === userStore.userInfo?.id" size="small" text @click.stop="goToEditSolution(item.id)">
+                      <el-icon><Edit /></el-icon>编辑
+                    </el-button>
+                    <el-button v-if="item.id > 0 && userStore.isAdmin && item.userId !== userStore.userInfo?.id" size="small" text type="danger" @click.stop="handleDeleteSolution(item)">
+                      <el-icon><Delete /></el-icon>删除
+                    </el-button>
+                  </div>
+                </div>
               </div>
-              <el-empty v-else description="还没有已发布题解" :image-size="80" />
+              <el-empty v-else description="还没有题解" :image-size="80" />
             </section>
+            <!-- Solution dialog -->
+            <el-dialog v-model="solutionDialogVisible" :title="viewingSolution?.title" width="700px" top="5vh">
+              <div v-if="viewingSolution" class="solution-dialog-content">
+                <div class="solution-dialog-meta">
+                  <el-tag v-if="viewingSolution.isOfficial" type="success" size="small" effect="dark">官方题解</el-tag>
+                  <span>{{ viewingSolution.username }} · {{ viewingSolution.language }} · {{ viewingSolution.updatedAt }}</span>
+                  <div style="margin-left: auto">
+                    <el-button size="small" :type="viewingSolution.liked ? 'primary' : 'default'" text @click="handleLike(viewingSolution)">
+                      <el-icon><Star /></el-icon> {{ viewingSolution.likeCount || 0 }}
+                    </el-button>
+                  </div>
+                </div>
+                <MarkdownRenderer :content="viewingSolution.content" />
+              </div>
+            </el-dialog>
           </template>
 
-          <template v-else>
+          <!-- SUBMISSIONS TAB -->
+          <template v-else-if="!resultView && leftTab === 'submissions'">
             <section class="problem-section">
-              <div class="section-title">最近提交</div>
+              <div class="section-title section-row">
+                <span>提交记录</span>
+                <router-link to="/status" class="view-all-link">查看全部 →</router-link>
+              </div>
               <div v-if="recentSubmissions.length" class="submission-list">
-                <div v-for="item in recentSubmissions" :key="item.id" class="submission-item">
+                <div v-for="item in recentSubmissions" :key="item.id" class="submission-item" @click="toggleSubmissionCode(item)">
                   <div class="submission-main">
-                    <span class="submission-id">#{{ item.id }}</span>
-                    <span :class="statusClass(item.status)">{{ item.status }}</span>
+                    <span :class="statusIconClass(item.status)" class="result-status-icon">●</span>
+                    <span :class="statusTextClass(item.status)">{{ item.status }}</span>
+                    <span class="submission-lang">{{ item.language }}</span>
+                    <span class="submission-time">{{ item.runtimeMs ?? '-' }}ms</span>
+                    <span class="submission-mem">{{ item.memoryKb ? (item.memoryKb > 1024 ? (item.memoryKb / 1024).toFixed(1) + 'MB' : item.memoryKb + 'KB') : '-' }}</span>
+                    <el-icon class="expand-icon"><ArrowDown v-if="!expandedSubmissions[item.id]" /><ArrowUp v-else /></el-icon>
                   </div>
-                  <div class="submission-meta">
-                    <span>{{ item.language }}</span>
-                    <span>{{ item.runtimeMs }}ms</span>
-                    <span>{{ item.memoryKb }} KB</span>
-                  </div>
+                  <transition name="fade">
+                    <div v-if="expandedSubmissions[item.id]" class="submission-code-block" @click.stop>
+                      <div v-if="loadingCode[item.id]" class="code-loading"><el-icon class="is-loading"><Loading /></el-icon> 加载中...</div>
+                      <pre v-else class="submission-code"><code>{{ submissionCodes[item.id] || '暂无代码' }}</code></pre>
+                    </div>
+                  </transition>
                 </div>
               </div>
               <el-empty v-else description="还没有提交记录" :image-size="80" />
             </section>
           </template>
-        </div>
-      </div>
 
-      <div class="divider" @mousedown="e => startResize(e, 'left')" />
-
-      <div class="panel panel-editor" :style="{ flex: panelFlex.editor }">
-        <CodeEditor
-          ref="codeEditorRef"
-          v-model="code"
-          :language="language"
-          :templates="templateMap"
-          :draft-key="draftKey"
-          :legacy-draft-key="legacyDraftKey"
-          @change-language="lang => language = lang"
-        />
-
-        <div class="run-panel">
-          <div class="run-panel-head">
-            <span>自定义输入</span>
-            <span class="run-panel-tip">用于 Run Code，不会计入正式提交记录</span>
-          </div>
-          <el-input
-            v-model="customInput"
-            type="textarea"
-            :rows="4"
-            placeholder="输入自定义测试数据"
-            resize="none"
-          />
-        </div>
-
-        <transition name="slide-up">
-          <div v-if="resultView" class="result-panel">
-            <div class="result-header">
-              <div class="result-title">
-                <span class="result-source">{{ resultView.source === 'run' ? '运行结果' : '提交结果' }}</span>
-                <span :class="statusClass(resultView.status)">
-                  {{ resultView.status }}
-                </span>
+          <!-- RESULT VIEW (replaces left panel when active) -->
+          <template v-else-if="resultView">
+            <div class="result-view">
+              <!-- Status banner -->
+              <div class="result-status-banner" :class="resultView.status === 'Accepted' ? 'banner-accepted' : 'banner-error'">
+                <div class="banner-status">
+                  <span class="banner-status-text">{{ resultView.status === 'Accepted' ? 'Accepted' : resultView.status }}</span>
+                  <span v-if="resultView.status === 'Accepted'" class="banner-check">✓</span>
+                  <span v-else class="banner-x">✗</span>
+                </div>
+                <div class="banner-stats">
+                  <div class="banner-stat">
+                    <span class="banner-stat-label">执行用时</span>
+                    <span class="banner-stat-value">{{ displayRuntime(resultView) }}</span>
+                  </div>
+                  <div class="banner-stat">
+                    <span class="banner-stat-label">内存消耗</span>
+                    <span class="banner-stat-value">{{ displayMemory(resultView) }}</span>
+                  </div>
+                  <div class="banner-stat">
+                    <span class="banner-stat-label">语言</span>
+                    <span class="banner-stat-value">{{ resultView.language }}</span>
+                  </div>
+                </div>
               </div>
-              <el-button text size="small" @click="resultView = null">
-                <el-icon><Close /></el-icon>
-              </el-button>
-            </div>
 
-            <div class="result-details">
-              <span v-if="resultView.traceId">Trace: {{ resultView.traceId }}</span>
-              <span>运行时间: {{ displayRuntime(resultView) }}</span>
-              <span>内存: {{ displayMemory(resultView) }}</span>
-              <span v-if="resultView.finishedAt">完成时间: {{ formatTime(resultView.finishedAt) }}</span>
-            </div>
+              <!-- Error details -->
+              <div v-if="resultView.status !== 'Accepted'" class="result-error-section">
+                <div v-if="resultView.errorMessage" class="error-block">
+                  <div class="error-block-title">错误信息</div>
+                  <pre class="error-pre">{{ resultView.errorMessage }}</pre>
+                </div>
+                <div v-if="resultView.compileOutput" class="error-block">
+                  <div class="error-block-title">编译输出</div>
+                  <pre class="error-pre">{{ resultView.compileOutput }}</pre>
+                </div>
+                <div v-if="resultView.stdout || resultView.stderr" class="error-block">
+                  <div class="error-block-title">运行输出</div>
+                  <pre v-if="resultView.stdout" class="error-pre">{{ resultView.stdout }}</pre>
+                  <pre v-if="resultView.stderr" class="error-pre error-text">{{ resultView.stderr }}</pre>
+                </div>
+              </div>
 
-            <div v-if="resultView.errorMessage" class="result-block">
-              <div class="result-block-title">错误信息</div>
-              <pre>{{ resultView.errorMessage }}</pre>
-            </div>
-
-            <div v-if="resultView.compileOutput" class="result-block">
-              <div class="result-block-title">编译输出</div>
-              <pre>{{ resultView.compileOutput }}</pre>
-            </div>
-
-            <div v-if="resultView.stdout || resultView.stderr" class="result-block">
-              <div class="result-block-title">运行输出</div>
-              <pre v-if="resultView.stdout">{{ resultView.stdout }}</pre>
-              <pre v-if="resultView.stderr" class="case-error">{{ resultView.stderr }}</pre>
-            </div>
-
-            <div v-if="resultView.caseResults?.length" class="result-block">
-              <div class="result-block-title">测试点结果</div>
-              <div class="case-list">
-                <div v-for="item in resultView.caseResults" :key="item.caseNo" class="case-item">
-                  <div class="case-top">
-                    <span>Case {{ item.caseNo }}</span>
-                    <span :class="statusClass(item.status)">{{ item.status }}</span>
+              <!-- Failed case details -->
+              <div v-if="failedCases.length" class="result-cases-section">
+                <div class="cases-title">失败的测试用例</div>
+                <div v-for="item in failedCases" :key="item.caseNo" class="case-card">
+                  <div class="case-header">
+                    <span>测试用例 {{ item.caseNo }}</span>
+                    <span :class="statusTextClass(item.status)">{{ item.status }}</span>
+                  </div>
+                  <div class="case-body">
+                    <div class="case-field">
+                      <div class="case-field-label">输入</div>
+                      <pre class="case-field-value">{{ getCaseInput(item) }}</pre>
+                    </div>
+                    <div class="case-field">
+                      <div class="case-field-label">预期输出</div>
+                      <pre class="case-field-value">{{ getCaseExpected(item) }}</pre>
+                    </div>
+                    <div v-if="item.stdoutPreview" class="case-field">
+                      <div class="case-field-label">你的输出</div>
+                      <pre class="case-field-value">{{ item.stdoutPreview }}</pre>
+                    </div>
+                    <div v-if="item.stderrPreview" class="case-field">
+                      <div class="case-field-label">错误输出</div>
+                      <pre class="case-field-value error-text">{{ item.stderrPreview }}</pre>
+                    </div>
                   </div>
                   <div class="case-meta">
-                    <span>{{ item.runtimeMs ?? 0 }} ms</span>
-                    <span>{{ item.memoryKb ?? 0 }} KB</span>
-                    <span>{{ item.stdoutBytes ?? 0 }} stdoutB</span>
-                    <span>{{ item.stderrBytes ?? 0 }} stderrB</span>
-                    <span v-if="item.signal">signal: {{ item.signal }}</span>
+                    <span>{{ item.runtimeMs ?? 0 }}ms</span>
+                    <span>{{ item.memoryKb ?? 0 }}KB</span>
                   </div>
-                  <pre v-if="item.stdoutPreview" class="case-preview">{{ item.stdoutPreview }}</pre>
-                  <pre v-if="item.stderrPreview" class="case-preview case-error">{{ item.stderrPreview }}</pre>
+                </div>
+              </div>
+
+              <!-- AI Analysis -->
+              <div class="result-ai-section">
+                <div class="ai-section-header">
+                  <span class="ai-section-title">
+                    <el-icon><MagicStick /></el-icon>
+                    AI 分析
+                  </span>
+                  <el-button
+                    v-if="!aiAnalysis && !aiAnalysisLoading"
+                    type="primary"
+                    size="small"
+                    @click="fetchAIAnalysis"
+                  >
+                    {{ resultView.status === 'Accepted' ? '分析代码' : '获取诊断' }}
+                  </el-button>
+                </div>
+                <div v-if="aiAnalysisLoading" class="ai-loading">
+                  <el-icon class="is-loading"><Loading /></el-icon>
+                  <span>AI 正在分析代码...</span>
+                </div>
+                <div v-else-if="aiAnalysis" class="ai-content">
+                  <MarkdownRenderer :content="aiAnalysis" />
+                </div>
+                <div v-else class="ai-placeholder">
+                  点击按钮，AI 将分析你的代码并给出{{ resultView.status === 'Accepted' ? '优化建议' : '改进建议' }}
                 </div>
               </div>
             </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- RESIZE DIVIDER -->
+      <div class="divider" @mousedown="e => startResize(e)" />
+
+      <!-- RIGHT PANEL: Editor + Test Cases -->
+      <div class="panel panel-right" :style="{ flex: panelFlex.right }">
+        <!-- Code Editor -->
+        <div class="editor-area">
+          <CodeEditor
+            ref="codeEditorRef"
+            v-model="code"
+            :language="language"
+            :templates="templateMap"
+            :draft-key="draftKey"
+            :legacy-draft-key="legacyDraftKey"
+            @change-language="lang => language = lang"
+          />
+        </div>
+
+        <!-- Test Case Panel (LeetCode style) -->
+        <div class="testcase-panel">
+          <!-- Collapsed state: minimal bar -->
+          <div v-if="testcaseCollapsed" class="testcase-collapsed-bar" @click="testcaseCollapsed = false">
+            <div class="collapsed-left">
+              <span class="collapsed-label">测试用例</span>
+              <span class="collapsed-hint">{{ testCases[activeCaseIdx]?.label || '' }}</span>
+            </div>
+            <div class="collapsed-right">
+              <el-button type="primary" size="small" :loading="running" @click.stop="runCurrentCase">
+                <el-icon><VideoPlay /></el-icon>运行
+              </el-button>
+              <el-icon class="expand-icon"><ArrowUp /></el-icon>
+            </div>
           </div>
-        </transition>
+
+          <!-- Expanded state -->
+          <template v-else>
+            <div class="testcase-header">
+              <div class="testcase-header-left">
+                <div class="testcase-tabs">
+                  <button
+                    v-for="(tc, idx) in testCases"
+                    :key="idx"
+                    :class="['tc-tab', { active: activeCaseIdx === idx }]"
+                    @click="activeCaseIdx = idx"
+                  >{{ tc.label }}</button>
+                  <button class="tc-tab tc-add" @click="addTestCase">+</button>
+                </div>
+              </div>
+              <div class="testcase-header-right">
+                <el-button type="primary" size="small" :loading="running" @click="runCurrentCase">
+                  <el-icon><VideoPlay /></el-icon>运行
+                </el-button>
+                <div class="collapse-btn" @click="testcaseCollapsed = true">
+                  <el-icon><ArrowDown /></el-icon>
+                </div>
+              </div>
+            </div>
+            <div class="testcase-body">
+              <div class="tc-section">
+                <div class="tc-label">输入</div>
+                <textarea
+                  v-model="testCases[activeCaseIdx].input"
+                  class="tc-textarea"
+                  rows="3"
+                  spellcheck="false"
+                />
+              </div>
+              <div v-if="testCases[activeCaseIdx].expected !== undefined" class="tc-section">
+                <div class="tc-label">
+                  预期输出
+                  <button class="tc-toggle" @click="toggleExpected">隐藏</button>
+                </div>
+                <textarea
+                  v-model="testCases[activeCaseIdx].expected"
+                  class="tc-textarea"
+                  rows="2"
+                  spellcheck="false"
+                />
+              </div>
+              <div v-else>
+                <button class="tc-toggle" @click="toggleExpected">+ 添加预期输出</button>
+              </div>
+
+              <!-- Run result inline -->
+              <div v-if="resultView && resultView.source === 'run'" class="tc-run-result">
+                <div class="tc-run-header">
+                  <span :class="statusTextClass(resultView.status)">{{ resultView.status }}</span>
+                  <span class="tc-run-stats">{{ displayRuntime(resultView) }} | {{ displayMemory(resultView) }}</span>
+                </div>
+                <div v-if="resultView.stdout" class="tc-run-output">
+                  <div class="tc-label">输出</div>
+                  <pre class="tc-pre">{{ resultView.stdout }}</pre>
+                </div>
+                <div v-if="resultView.stderr" class="tc-run-output">
+                  <div class="tc-label">错误</div>
+                  <pre class="tc-pre error-text">{{ resultView.stderr }}</pre>
+                </div>
+                <div v-if="resultView.compileOutput" class="tc-run-output">
+                  <div class="tc-label">编译输出</div>
+                  <pre class="tc-pre">{{ resultView.compileOutput }}</pre>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
       </div>
     </div>
+
+    <!-- AI Chat FAB -->
+    <div class="ai-chat-fab" @click="chatOpen = !chatOpen">
+      <el-icon :size="22"><MagicStick /></el-icon>
+    </div>
+    <transition name="slide-right">
+      <div v-if="chatOpen" class="ai-chat-panel">
+        <div class="ai-chat-header">
+          <span><el-icon><MagicStick /></el-icon> AI 助手</span>
+          <el-button text size="small" @click="chatOpen = false"><el-icon><Close /></el-icon></el-button>
+        </div>
+        <div class="ai-chat-messages" ref="chatMessagesRef">
+          <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', msg.role]">
+            <div class="chat-msg-content">{{ msg.content }}</div>
+          </div>
+          <div v-if="chatLoading" class="chat-msg assistant">
+            <div class="chat-msg-content"><el-icon class="is-loading"><Loading /></el-icon> 思考中...</div>
+          </div>
+        </div>
+        <div class="ai-chat-input">
+          <el-input v-model="chatInput" placeholder="询问关于这道题的问题..." @keyup.enter="sendChat" :disabled="chatLoading">
+            <template #append>
+              <el-button @click="sendChat" :loading="chatLoading">发送</el-button>
+            </template>
+          </el-input>
+          <div class="chat-context-hint">
+            <el-button text size="small" @click="sendCodeContext">
+              <el-icon><Document /></el-icon> 发送当前代码
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useProblemStore } from '@/stores/problem'
+import { problemApi } from '@/api/problem'
+import { aiApi } from '@/api/ai'
 import { useSubmissionStore } from '@/stores/submission'
 import { useUserStore } from '@/stores/user'
 import CodeEditor from '@/components/CodeEditor.vue'
@@ -258,35 +449,77 @@ const userStore = useUserStore()
 
 const problem = computed(() => problemStore.currentProblem)
 const recentSubmissions = ref([])
-const activeTab = ref('description')
+const leftTab = ref('description')
+const expandedSubmissions = ref({})
+const submissionCodes = ref({})
+const loadingCode = ref({})
+const solutionDialogVisible = ref(false)
+const viewingSolution = ref(null)
+const aiAnalysis = ref('')
+const aiAnalysisLoading = ref(false)
+const chatOpen = ref(false)
+const chatMessages = ref([{ role: 'assistant', content: '你好！我是 AI 助手，可以帮你解答关于这道题的问题、分析代码或给出提示。' }])
+const chatInput = ref('')
+const chatLoading = ref(false)
+const chatMessagesRef = ref(null)
+const testcaseCollapsed = ref(false)
 
 const templateMap = computed(() => {
   const entries = Array.isArray(problem.value?.templates) ? problem.value.templates : []
   return entries.reduce((acc, item) => {
-    if (item.language && item.code) {
-      acc[item.language] = item.code
-    }
+    if (item.language && item.code) acc[item.language] = item.code
     return acc
   }, {})
 })
 
 const code = ref('')
 const language = ref('cpp')
-const customInput = ref('')
 const submitting = ref(false)
 const running = ref(false)
 const resultView = ref(null)
 const codeEditorRef = ref(null)
 
+// Test case management
+const testCases = ref([{ label: '用例 1', input: '', expected: undefined }])
+const activeCaseIdx = ref(0)
+const customInput = computed(() => testCases.value[activeCaseIdx.value]?.input || '')
+
+function addTestCase() {
+  testCases.value.push({ label: `用例 ${testCases.value.length + 1}`, input: '', expected: undefined })
+  activeCaseIdx.value = testCases.value.length - 1
+}
+function toggleExpected() {
+  const tc = testCases.value[activeCaseIdx.value]
+  tc.expected = tc.expected === undefined ? '' : undefined
+}
+function loadSamples() {
+  if (problem.value?.samples?.length) {
+    testCases.value = problem.value.samples.map((s, i) => ({
+      label: `样例 ${i + 1}`, input: s.input || '', expected: s.expected || ''
+    }))
+    activeCaseIdx.value = 0
+  }
+}
+
+// Failed cases for result view
+const failedCases = computed(() => {
+  if (!resultView.value?.caseResults?.length) return []
+  return resultView.value.caseResults.filter(c => c.status !== 'Accepted')
+})
+function getCaseInput(item) {
+  const tc = problem.value?.samples?.[item.caseNo - 1]
+  return tc?.input || '(隐藏用例)'
+}
+function getCaseExpected(item) {
+  const tc = problem.value?.samples?.[item.caseNo - 1]
+  return tc?.expected || '(隐藏用例)'
+}
+
 const draftNamespace = computed(() => userStore.userInfo?.id ? `user-${userStore.userInfo.id}` : 'guest')
 const draftKey = computed(() => `${draftNamespace.value}:problem-${route.params.id}`)
 const legacyDraftKey = computed(() => `problem-${route.params.id}`)
 
-const panelFlex = reactive({
-  problem: 1.15,
-  editor: 1,
-})
-
+const panelFlex = reactive({ left: 1.15, right: 1 })
 let resizeState = null
 
 function startResize(e) {
@@ -295,544 +528,429 @@ function startResize(e) {
   document.addEventListener('mousemove', onResize)
   document.addEventListener('mouseup', stopResize)
 }
-
 function onResize(e) {
   if (!resizeState) return
   const dx = e.clientX - resizeState.startX
   const scale = dx / window.innerWidth * 3
-  panelFlex.problem = Math.max(0.4, resizeState.startFlex.problem + scale)
-  panelFlex.editor = Math.max(0.4, resizeState.startFlex.editor - scale)
+  panelFlex.left = Math.max(0.4, resizeState.startFlex.left + scale)
+  panelFlex.right = Math.max(0.4, resizeState.startFlex.right - scale)
 }
-
 function stopResize() {
   resizeState = null
   document.removeEventListener('mousemove', onResize)
   document.removeEventListener('mouseup', stopResize)
 }
 
-function statusClass(status) {
+function statusIconClass(status) {
+  if (status === 'Accepted') return 'icon-accepted'
+  if (['Wrong Answer', 'Runtime Error'].includes(status)) return 'icon-wrong'
+  if (['Compile Error'].includes(status)) return 'icon-ce'
+  if (['Time Limit Exceeded'].includes(status)) return 'icon-tle'
+  if (['Memory Limit Exceeded'].includes(status)) return 'icon-mle'
+  return 'icon-pending'
+}
+function statusTextClass(status) {
   const map = {
-    Pending: 'status-pending',
-    Queueing: 'status-pending',
-    Compiling: 'status-running',
-    Running: 'status-running',
-    Accepted: 'status-accepted',
-    'Wrong Answer': 'status-wrong',
-    'Compile Error': 'status-ce',
-    'Runtime Error': 'status-wrong',
-    'Time Limit Exceeded': 'status-tle',
-    'Memory Limit Exceeded': 'status-mle',
-    'Output Limit Exceeded': 'status-ole',
-    'System Error': 'status-system'
+    Pending: 'text-pending', Queueing: 'text-pending', Compiling: 'text-running', Running: 'text-running',
+    Accepted: 'text-accepted', 'Wrong Answer': 'text-wrong', 'Compile Error': 'text-ce',
+    'Runtime Error': 'text-wrong', 'Time Limit Exceeded': 'text-tle',
+    'Memory Limit Exceeded': 'text-mle', 'Output Limit Exceeded': 'text-ole', 'System Error': 'text-system'
   }
   return map[status] || ''
 }
-
+function diffTagType(d) { return d === '简单' ? 'success' : d === '中等' ? 'warning' : 'danger' }
 function displayRuntime(result) {
   const runtime = result?.runtimeMs ?? result?.runtime
   return runtime != null ? `${runtime}ms` : '-'
 }
-
 function displayMemory(result) {
-  if (result?.memoryKb != null && result.memoryKb > 0) {
-    return `${result.memoryKb} KB`
-  }
-  if (result?.memory != null) {
-    return `${result.memory} MB`
-  }
+  if (result?.memoryKb != null && result.memoryKb > 0) return `${result.memoryKb} KB`
+  if (result?.memory != null) return `${result.memory} MB`
   return '-'
 }
-
 function formatTime(iso) {
   if (!iso) return '-'
-  const d = new Date(iso)
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
-  })
+  return new Date(iso).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function diffTagType(d) {
-  return d === '简单' ? 'success' : d === '中等' ? 'warning' : 'danger'
+async function toggleSubmissionCode(item) {
+  const id = item.id
+  if (expandedSubmissions.value[id]) { expandedSubmissions.value[id] = false; return }
+  expandedSubmissions.value[id] = true
+  if (submissionCodes.value[id]) return
+  loadingCode.value[id] = true
+  try {
+    const { submissionApi } = await import('@/api/submission')
+    const res = await submissionApi.getDetail(id)
+    submissionCodes.value[id] = res.data?.code || ''
+  } catch { submissionCodes.value[id] = '加载失败' }
+  finally { loadingCode.value[id] = false }
 }
 
 async function hydrateSubmissionResult(result) {
-  if (!result?.id || result.source !== 'submit') {
-    resultView.value = result
-    return result
-  }
-  const [casesRes, outputRes] = await Promise.all([
-    submissionStore.getCases(result.id),
-    submissionStore.getOutput(result.id)
-  ])
-  const hydrated = {
-    ...result,
-    caseResults: casesRes?.items || result.caseResults || [],
-    stdout: outputRes?.stdout || '',
-    stderr: outputRes?.stderr || ''
-  }
+  if (!result?.id || result.source !== 'submit') { resultView.value = result; return result }
+  const [casesRes, outputRes] = await Promise.all([submissionStore.getCases(result.id), submissionStore.getOutput(result.id)])
+  const hydrated = { ...result, caseResults: casesRes?.items || result.caseResults || [], stdout: outputRes?.stdout || '', stderr: outputRes?.stderr || '' }
   resultView.value = hydrated
   return hydrated
 }
 
 async function handleSubmit() {
   const codeVal = code.value || codeEditorRef.value?.getCode()
-  if (!codeVal?.trim()) {
-    ElMessage.warning('请先输入代码')
-    return
-  }
+  if (!codeVal?.trim()) { ElMessage.warning('请先输入代码'); return }
   submitting.value = true
   resultView.value = null
+  aiAnalysis.value = ''
   try {
-    const result = await submissionStore.submit({
-      problemId: problem.value.id,
-      language: language.value,
-      code: codeVal
-    })
+    const result = await submissionStore.submit({ problemId: problem.value.id, language: language.value, code: codeVal })
     const hydrated = await hydrateSubmissionResult(result)
-    if (hydrated.status === 'Accepted') {
-      ElMessage.success('通过')
-    } else {
-      ElMessage.warning(`评测结果: ${hydrated.status}`)
-    }
+    if (hydrated.status === 'Accepted') ElMessage.success('通过')
+    else ElMessage.warning(`评测结果: ${hydrated.status}`)
     await loadRecentSubmissions()
-  } catch {
-    ElMessage.error('提交失败')
-  } finally {
-    submitting.value = false
-  }
+  } catch { ElMessage.error('提交失败') }
+  finally { submitting.value = false }
 }
 
+async function runCurrentCase() { await handleRun() }
 async function handleRun() {
   const codeVal = code.value || codeEditorRef.value?.getCode()
-  if (!codeVal?.trim()) {
-    ElMessage.warning('请先输入代码')
-    return
-  }
+  if (!codeVal?.trim()) { ElMessage.warning('请先输入代码'); return }
   running.value = true
-  resultView.value = null
+  // For run, show result inline in test case panel (not left panel)
+  const prevResult = resultView.value
+  if (resultView.value?.source !== 'submit') resultView.value = null
   try {
-    const res = await problemStore.runProblem(problem.value.id, {
-      language: language.value,
-      code: codeVal,
-      customInput: customInput.value
-    })
-    resultView.value = res
-    if (res.status === 'Accepted') {
-      ElMessage.success('运行完成')
-    } else {
-      ElMessage.warning(`运行结果: ${res.status}`)
-    }
-  } catch {
-    ElMessage.error('运行失败')
-  } finally {
-    running.value = false
-  }
+    const res = await problemStore.runProblem(problem.value.id, { language: language.value, code: codeVal, customInput: customInput.value })
+    resultView.value = { ...res, source: 'run' }
+    if (res.status === 'Accepted') ElMessage.success('运行完成')
+    else ElMessage.warning(`运行结果: ${res.status}`)
+  } catch { ElMessage.error('运行失败'); resultView.value = prevResult }
+  finally { running.value = false }
 }
 
 async function toggleFavorite() {
   if (!problem.value?.id) return
-  if (problem.value.favorite) {
-    await problemStore.unfavoriteProblem(problem.value.id)
-    problem.value.favorite = false
-    ElMessage.success('已取消收藏')
-  } else {
-    await problemStore.favoriteProblem(problem.value.id)
-    problem.value.favorite = true
-    ElMessage.success('已收藏题目')
-  }
+  if (problem.value.favorite) { await problemStore.unfavoriteProblem(problem.value.id); problem.value.favorite = false; ElMessage.success('已取消收藏') }
+  else { await problemStore.favoriteProblem(problem.value.id); problem.value.favorite = true; ElMessage.success('已收藏题目') }
 }
 
 async function loadRecentSubmissions() {
-  const res = await submissionStore.fetchSubmissions({
-    page: 1,
-    pageSize: 5,
-    problemId: problem.value?.id || ''
-  })
+  const res = await submissionStore.fetchSubmissions({ page: 1, pageSize: 5, problemId: problem.value?.id || '' })
   recentSubmissions.value = submissionStore.submissions.slice(0, 5)
   return res
 }
 
 function goToMySolutionEditor() {
   const my = problem.value?.mySolution
-  if (my?.id) {
-    router.push(`/my/solutions/${my.id}/edit`)
-    return
-  }
-  ElMessage.info('请先在“我的题解”页创建一篇题解草稿。')
+  if (my?.id) { router.push(`/my/solutions/${my.id}/edit`); return }
+  router.push(`/my/solutions/new?problemId=${route.params.id}`)
+}
+
+const likedSet = ref(new Set())
+const allSolutions = computed(() => (problem.value?.solutions || []).map(s => ({ ...s, liked: likedSet.value.has(s.id) })))
+function viewSolution(item) { viewingSolution.value = item; solutionDialogVisible.value = true }
+async function handleLike(item) {
+  try {
+    const res = await problemApi.likeSolution(item.id)
+    const newLiked = res.data?.liked ?? !item.liked
+    item.liked = newLiked
+    item.likeCount = res.data?.likeCount ?? (newLiked ? item.likeCount + 1 : Math.max(0, item.likeCount - 1))
+    if (newLiked) likedSet.value.add(item.id); else likedSet.value.delete(item.id)
+  } catch { ElMessage.error('操作失败') }
+}
+function goToEditSolution(id) { router.push(`/my/solutions/${id}/edit`) }
+async function handleDeleteSolution(item) {
+  try {
+    await ElMessageBox.confirm('确定要删除这篇题解吗？', '删除题解', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
+    await problemApi.deleteSolution(item.id)
+    ElMessage.success('题解已删除')
+    await problemStore.fetchProblem(route.params.id)
+  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
+}
+
+function isTerminalStatus(status) {
+  return ['Accepted', 'Wrong Answer', 'Compile Error', 'Runtime Error', 'Time Limit Exceeded', 'Memory Limit Exceeded', 'Output Limit Exceeded', 'System Error'].includes(status)
+}
+
+async function fetchAIAnalysis() {
+  if (!resultView.value || !code.value) return
+  aiAnalysisLoading.value = true; aiAnalysis.value = ''
+  try {
+    if (resultView.value.status === 'Accepted') {
+      const res = await aiApi.solveProblem({ problemId: problem.value.id, question: '请分析以下通过的代码，给出：1) 代码风格评价 2) 时间复杂度 3) 空间复杂度 4) 使用的知识点 vs 题目考察的知识点 5) 优化方向', level: 'explain' })
+      aiAnalysis.value = res.data?.answer || '暂时无法提供分析'
+    } else {
+      const res = await aiApi.diagnoseCode({ problemId: problem.value.id, language: language.value, code: code.value, judgeStatus: resultView.value.status, errorMessage: resultView.value.errorMessage || resultView.value.compileOutput || '' })
+      aiAnalysis.value = res.data?.rawMarkdown || res.data?.summary || '暂时无法提供分析'
+    }
+  } catch { aiAnalysis.value = 'AI 分析暂时不可用' }
+  finally { aiAnalysisLoading.value = false }
+}
+
+function scrollChatToBottom() { setTimeout(() => { if (chatMessagesRef.value) chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight }, 50) }
+async function sendChat() {
+  const msg = chatInput.value.trim()
+  if (!msg || chatLoading.value) return
+  chatMessages.value.push({ role: 'user', content: msg }); chatInput.value = ''; chatLoading.value = true; scrollChatToBottom()
+  try {
+    const res = await aiApi.chat({ message: msg, problem_id: problem.value?.id, history: chatMessages.value.slice(-10).map(m => ({ role: m.role, content: m.content })) })
+    chatMessages.value.push({ role: 'assistant', content: res.data?.reply || '暂时无法回复' })
+  } catch { chatMessages.value.push({ role: 'assistant', content: 'AI 服务暂时不可用' }) }
+  finally { chatLoading.value = false; scrollChatToBottom() }
+}
+async function sendCodeContext() {
+  if (!code.value) { ElMessage.warning('编辑器中没有代码'); return }
+  chatInput.value = `请分析我的代码并给出改进建议：\n\`\`\`${language.value}\n${code.value}\n\`\`\``
+  sendChat()
 }
 
 watch(() => route.params.id, async () => {
-  language.value = 'cpp'
-  code.value = ''
-  customInput.value = ''
-  resultView.value = null
-  activeTab.value = 'description'
-  const loaded = await problemStore.fetchProblem(route.params.id)
-  await loadRecentSubmissions()
+  language.value = 'cpp'; code.value = ''; resultView.value = null; leftTab.value = 'description'
+  await problemStore.fetchProblem(route.params.id); loadSamples(); await loadRecentSubmissions()
 })
-
-onMounted(async () => {
-  const loaded = await problemStore.fetchProblem(route.params.id)
-  await loadRecentSubmissions()
-})
-
-onBeforeUnmount(() => {
-  stopResize()
-})
+onMounted(async () => { await problemStore.fetchProblem(route.params.id); loadSamples(); await loadRecentSubmissions() })
+onBeforeUnmount(() => { stopResize() })
 </script>
 
 <style scoped>
-.problem-detail-page {
-  height: calc(100vh - 60px);
-  display: flex;
-  flex-direction: column;
+/* Layout */
+.problem-detail-page { height: 100vh; display: flex; flex-direction: column; background: var(--bg-primary); }
+.detail-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 0 16px; height: 46px; background: var(--bg-card); border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; }
+.problem-id { font-family: 'SF Mono', 'Cascadia Code', monospace; color: var(--text-muted); font-size: 13px; }
+.problem-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.detail-panels { flex: 1; display: flex; overflow: hidden; }
+.panel { display: flex; flex-direction: column; overflow: hidden; min-width: 200px; }
+.panel-left { background: var(--bg-card); }
+.panel-right { display: flex; flex-direction: column; background: var(--editor-bg); }
+
+/* Tabs */
+.panel-tabs { display: flex; align-items: center; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--border-light); background: var(--bg-card); flex-shrink: 0; gap: 2px; }
+.tab-btn { border: none; background: transparent; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text-muted); transition: all 0.15s; white-space: nowrap; }
+.tab-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tab-btn.active { color: var(--text-primary); font-weight: 600; background: var(--bg-hover); }
+.tab-btn.result-tab { display: flex; align-items: center; gap: 6px; }
+.tab-btn.close-result { margin-left: auto; padding: 4px 8px; color: var(--text-muted); }
+
+/* Status icons */
+.result-status-icon { font-size: 10px; }
+.icon-accepted { color: var(--accent-green); }
+.icon-wrong { color: var(--accent-red); }
+.icon-ce { color: var(--accent-purple); }
+.icon-tle { color: var(--accent-orange); }
+.icon-mle { color: #c2410c; }
+.icon-pending { color: var(--text-muted); }
+.text-accepted { color: var(--accent-green); font-weight: 600; }
+.text-wrong { color: var(--accent-red); font-weight: 600; }
+.text-ce { color: var(--accent-purple); font-weight: 600; }
+.text-tle { color: var(--accent-orange); font-weight: 600; }
+.text-mle { color: #c2410c; font-weight: 600; }
+.text-ole { color: #b45309; font-weight: 600; }
+.text-system { color: #7c3aed; font-weight: 600; }
+.text-running { color: var(--accent-blue); font-weight: 600; }
+.text-pending { color: var(--text-muted); }
+
+/* Left panel body */
+.panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.problem-section + .problem-section { margin-top: 24px; }
+.section-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.section-row { display: flex; align-items: center; justify-content: space-between; }
+.panel-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+
+/* Samples */
+.sample-list { display: flex; flex-direction: column; gap: 12px; }
+.sample-card { border: 1px solid var(--border-light); border-radius: 8px; padding: 12px; background: var(--bg-hover); }
+.sample-head { font-weight: 600; margin-bottom: 8px; font-size: 13px; }
+.sample-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sample-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.sample-card pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+.sample-explain { margin-top: 8px; }
+
+/* Solutions */
+.solution-list { display: flex; flex-direction: column; gap: 10px; }
+.solution-item { border: 1px solid var(--border-light); border-radius: 8px; padding: 12px; background: var(--bg-hover); cursor: pointer; transition: border-color 0.15s; }
+.solution-item:hover { border-color: var(--accent-primary); }
+.solution-head { margin-bottom: 6px; }
+.solution-title { font-size: 14px; font-weight: 600; }
+.solution-title-row { display: flex; align-items: center; gap: 6px; }
+.solution-meta { margin-top: 2px; font-size: 11px; color: var(--text-muted); display: flex; gap: 10px; }
+.solution-preview { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.solution-actions { margin-top: 6px; display: flex; gap: 4px; }
+.solution-dialog-content { max-height: 60vh; overflow-y: auto; }
+.solution-dialog-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+
+/* Submissions */
+.submission-list { display: flex; flex-direction: column; gap: 6px; }
+.submission-item { border: 1px solid var(--border-light); border-radius: 8px; padding: 10px 12px; background: var(--bg-hover); cursor: pointer; transition: border-color 0.15s; }
+.submission-item:hover { border-color: var(--accent-primary); }
+.submission-main { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.submission-lang, .submission-time, .submission-mem { font-size: 12px; color: var(--text-muted); }
+.expand-icon { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+.submission-code-block { margin-top: 10px; border-top: 1px solid var(--border-light); padding-top: 10px; }
+.submission-code { background: var(--code-bg); border-radius: 6px; padding: 10px; font-size: 12px; line-height: 1.6; overflow-x: auto; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+.code-loading { text-align: center; padding: 12px; color: var(--text-muted); font-size: 12px; }
+.related-list { display: flex; flex-direction: column; gap: 6px; }
+.related-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; background: var(--bg-hover); text-decoration: none; color: inherit; transition: background 0.15s; }
+.related-item:hover { background: var(--accent-primary-bg); }
+.related-title { font-size: 13px; font-weight: 500; }
+.view-all-link { font-size: 12px; color: var(--accent-blue); }
+.view-all-link:hover { text-decoration: underline; }
+
+/* Result View (left panel) */
+.result-view { display: flex; flex-direction: column; gap: 16px; }
+.result-status-banner { border-radius: 10px; padding: 20px; }
+.banner-accepted { background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 1px solid #86efac; }
+.banner-error { background: linear-gradient(135deg, #fef2f2, #fee2e2); border: 1px solid #fca5a5; }
+[data-theme="dark"] .banner-accepted { background: linear-gradient(135deg, #052e16, #14532d); border-color: #16a34a; }
+[data-theme="dark"] .banner-error { background: linear-gradient(135deg, #450a0a, #7f1d1d); border-color: #dc2626; }
+.banner-status { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.banner-status-text { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.banner-check { font-size: 24px; color: var(--accent-green); }
+.banner-x { font-size: 24px; color: var(--accent-red); }
+.banner-stats { display: flex; gap: 28px; }
+.banner-stat { display: flex; flex-direction: column; gap: 2px; }
+.banner-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.banner-stat-value { font-size: 16px; font-weight: 700; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+
+/* Error section */
+.result-error-section { display: flex; flex-direction: column; gap: 10px; }
+.error-block { background: var(--bg-hover); border: 1px solid var(--border-light); border-radius: 8px; padding: 12px; }
+.error-block-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.error-pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.6; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+.error-text { color: var(--accent-red); }
+
+/* Failed cases */
+.result-cases-section { display: flex; flex-direction: column; gap: 10px; }
+.cases-title { font-size: 14px; font-weight: 700; }
+.case-card { border: 1px solid var(--border-light); border-radius: 8px; overflow: hidden; }
+.case-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-hover); font-size: 13px; font-weight: 600; }
+.case-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.case-field { display: flex; flex-direction: column; gap: 4px; }
+.case-field-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.case-field-value { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.5; font-family: 'SF Mono', 'Cascadia Code', monospace; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; padding: 8px 10px; }
+.case-meta { display: flex; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--border-light); font-size: 11px; color: var(--text-muted); }
+
+/* AI section */
+.result-ai-section { border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; background: var(--bg-hover); }
+.ai-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ai-section-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--accent-primary); }
+.ai-loading { display: flex; align-items: center; gap: 8px; padding: 8px 0; color: var(--text-muted); font-size: 13px; }
+.ai-content { font-size: 13px; line-height: 1.7; }
+.ai-placeholder { font-size: 12px; color: var(--text-muted); }
+
+/* Divider */
+.divider { width: 4px; cursor: col-resize; background: var(--border-light); transition: background 0.15s; flex-shrink: 0; }
+.divider:hover { background: var(--accent-primary); }
+
+/* Editor area */
+.editor-area { flex: 1; overflow: hidden; min-height: 200px; }
+
+/* Test case panel (LeetCode style) */
+.testcase-panel { flex-shrink: 0; }
+
+/* Collapsed bar */
+.testcase-collapsed-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 14px; height: 40px;
+  background: #282828; border-top: 1px solid #3c3c3c;
+  cursor: pointer; user-select: none;
+  transition: background 0.15s;
 }
-.detail-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 16px;
-  background: #fff;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
+.testcase-collapsed-bar:hover { background: #2f2f2f; }
+.collapsed-left { display: flex; align-items: center; gap: 10px; }
+.collapsed-label { font-size: 13px; font-weight: 600; color: #e5e5e5; }
+.collapsed-hint { font-size: 12px; color: #888; }
+.collapsed-right { display: flex; align-items: center; gap: 8px; }
+.expand-icon { color: #888; font-size: 14px; }
+
+/* Expanded header */
+.testcase-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; height: 42px;
+  background: #1e1e1e; border-top: 1px solid #3c3c3c;
+  user-select: none;
 }
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.testcase-header-left { display: flex; align-items: center; flex: 1; min-width: 0; }
+.testcase-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.testcase-tabs { display: flex; gap: 0; overflow-x: auto; }
+.tc-tab {
+  border: none; background: transparent;
+  color: #888; padding: 10px 14px;
+  font-size: 13px; cursor: pointer;
+  white-space: nowrap; transition: all 0.12s;
+  border-bottom: 2px solid transparent;
+  position: relative;
 }
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.tc-tab:hover { color: #ccc; background: rgba(255,255,255,0.04); }
+.tc-tab.active { color: #fff; font-weight: 600; border-bottom-color: #1a73e8; background: rgba(255,255,255,0.04); }
+.tc-tab.tc-add { font-size: 16px; font-weight: 400; padding: 10px 12px; }
+.tc-tab.tc-add:hover { color: #1a73e8; }
+.collapse-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 4px;
+  cursor: pointer; color: #888; transition: all 0.15s;
 }
-.problem-id {
-  font-family: monospace;
-  color: var(--text-muted);
-  font-size: 14px;
+.collapse-btn:hover { background: rgba(255,255,255,0.08); color: #ccc; }
+
+/* Expanded body */
+.testcase-body {
+  padding: 10px 14px 14px;
+  background: #282828;
+  display: flex; flex-direction: column; gap: 10px;
 }
-.problem-name {
-  font-size: 16px;
-  font-weight: 600;
+.tc-section { display: flex; flex-direction: column; gap: 4px; }
+.tc-label {
+  font-size: 12px; color: #888; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
 }
-.detail-panels {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-  background: var(--bg-primary);
-}
-.panel {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 220px;
-}
-.panel-left {
-  background: #fff;
-}
-.panel-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color);
-  background: #fafbfc;
-}
-.tab-btn {
-  border: none;
-  background: transparent;
-  padding: 8px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-.tab-btn.active {
-  background: #edf4ff;
-  color: var(--accent-blue);
-  font-weight: 600;
-}
-.panel-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
-.panel-meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-.problem-section + .problem-section {
-  margin-top: 28px;
-}
-.section-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-.section-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.sample-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.sample-card {
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 14px;
-  background: #fafbfc;
-}
-.sample-head {
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-.sample-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.sample-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-.sample-card pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: #fff;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+.tc-textarea {
+  background: #1e1e1e; color: #e5e5e5;
+  border: 1px solid #3c3c3c; border-radius: 6px;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: 13px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  resize: vertical; outline: none; line-height: 1.6;
+  width: 100%; box-sizing: border-box;
+  transition: border-color 0.15s;
 }
-.sample-explain {
-  margin-top: 10px;
+.tc-textarea:focus { border-color: #1a73e8; }
+.tc-textarea::placeholder { color: #555; }
+.tc-toggle { border: none; background: transparent; color: #1a73e8; font-size: 12px; cursor: pointer; padding: 0; }
+.tc-toggle:hover { text-decoration: underline; }
+
+/* Run result inline */
+.tc-run-result { border-top: 1px solid #3c3c3c; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tc-run-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; }
+.tc-run-stats { font-size: 12px; color: #888; font-weight: 400; }
+.tc-run-output { display: flex; flex-direction: column; gap: 4px; }
+.tc-pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-size: 12px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 6px;
+  padding: 10px 12px; line-height: 1.5; color: #e5e5e5;
+  max-height: 200px; overflow-y: auto;
 }
-.solution-editor,
-.solution-list,
-.submission-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.solution-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-.solution-tip {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.solution-item,
-.submission-item {
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 14px;
-  background: #fafbfc;
-}
-.solution-link-card {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-}
-.solution-link-card:hover {
-  border-color: var(--accent-blue);
-  background: #f0f7ff;
-}
-.solution-head {
-  margin-bottom: 10px;
-}
-.solution-title {
-  font-size: 16px;
-  font-weight: 700;
-}
-.solution-meta,
-.submission-meta {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.solution-preview {
-  font-size: 14px;
-  color: var(--text-secondary);
-  line-height: 1.7;
-}
-.submission-main {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.submission-id {
-  font-family: monospace;
-  color: var(--text-muted);
-}
-.related-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.related-item {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 12px;
-  background: #fafbfc;
-  text-decoration: none;
-}
-.related-item:hover {
-  border-color: var(--accent-blue);
-  background: #f0f7ff;
-}
-.related-title {
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: var(--text-primary);
-}
-.related-meta {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.panel-editor {
-  background: #1e1e2e;
-}
-.divider {
-  width: 5px;
-  cursor: col-resize;
-  background: var(--border-color);
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-.divider:hover {
-  background: var(--accent-blue);
-}
-.run-panel {
-  background: #161621;
-  border-top: 1px solid #2d2d3f;
-  padding: 12px 14px;
-}
-.run-panel-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: #e5e7eb;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-.run-panel-tip {
-  color: #9ca3af;
-  font-size: 12px;
-}
-.run-panel :deep(.el-textarea__inner) {
-  background: #0f172a;
-  color: #e5e7eb;
-  border-color: #374151;
-}
-.result-panel {
-  background: #fff;
-  border-top: 2px solid var(--border-color);
-  padding: 12px 16px;
-  flex-shrink: 0;
-  max-height: 46vh;
-  overflow-y: auto;
-}
-.result-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 16px;
-  font-weight: 700;
-}
-.result-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.result-source {
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-.result-details {
-  display: flex;
-  gap: 24px;
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  flex-wrap: wrap;
-}
-.result-block {
-  margin-top: 12px;
-}
-.result-block-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-.result-block pre,
-.case-preview {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: #f5f7fa;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.case-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.case-item {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: #fafbfc;
-}
-.case-top,
-.case-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.case-top {
-  font-weight: 600;
-}
-.case-meta {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.case-preview {
-  margin-top: 8px;
-}
-.case-error {
-  background: #fff2f0;
-}
-.slide-up-enter-active, .slide-up-leave-active {
-  transition: all 0.3s ease;
-}
-.slide-up-enter-from, .slide-up-leave-to {
-  transform: translateY(100%);
-  opacity: 0;
-}
-@media (max-width: 1200px) {
-  .sample-grid {
-    grid-template-columns: 1fr;
-  }
-}
+.error-text { color: #f87171; }
+
+/* Transitions */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+.slide-down-enter-active, .slide-down-leave-active { transition: all 0.2s ease; }
+.slide-down-enter-from, .slide-down-leave-to { max-height: 0; opacity: 0; overflow: hidden; }
+.slide-down-enter-to, .slide-down-leave-from { max-height: 500px; opacity: 1; }
+.slide-right-enter-active, .slide-right-leave-active { transition: all 0.3s ease; }
+.slide-right-enter-from, .slide-right-leave-to { transform: translateX(100%); opacity: 0; }
+
+/* AI Chat */
+.ai-chat-fab { position: fixed; bottom: 20px; right: 20px; width: 44px; height: 44px; border-radius: 50%; background: var(--gradient-hero); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-lg); z-index: 1001; transition: transform 0.15s; }
+.ai-chat-fab:hover { transform: scale(1.08); }
+.ai-chat-panel { position: fixed; bottom: 76px; right: 20px; width: 360px; height: 480px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; box-shadow: var(--shadow-xl); z-index: 1001; display: flex; flex-direction: column; overflow: hidden; }
+.ai-chat-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border-light); font-weight: 600; font-size: 14px; background: var(--bg-hover); }
+.ai-chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.chat-msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.6; word-break: break-word; }
+.chat-msg.user { align-self: flex-end; background: var(--accent-primary); color: #fff; border-bottom-right-radius: 4px; }
+.chat-msg.assistant { align-self: flex-start; background: var(--bg-hover); color: var(--text-primary); border-bottom-left-radius: 4px; }
+.ai-chat-input { padding: 10px; border-top: 1px solid var(--border-light); }
+.chat-context-hint { margin-top: 4px; text-align: right; }
+
+@media (max-width: 1200px) { .sample-grid { grid-template-columns: 1fr; } }
 </style>

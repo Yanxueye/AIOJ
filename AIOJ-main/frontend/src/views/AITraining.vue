@@ -98,7 +98,7 @@ onMounted(() => {
 }
 .training-sidebar {
   width: 300px;
-  background: #fff;
+  background: var(--bg-card);
   border-right: 1px solid var(--border-color);
   padding: 20px;
   overflow-y: auto;
@@ -112,7 +112,8 @@ onMounted(() => {
 }
 .sidebar-header h3 {
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .sidebar-desc {
   font-size: 13px;

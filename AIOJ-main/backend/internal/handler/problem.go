@@ -18,7 +18,7 @@ type ProblemHandler struct {
 }
 
 type problemPayload struct {
-	ID              uint64             `json:"id" binding:"required"`
+	ID              uint64             `json:"id"`
 	Title           string             `json:"title" binding:"required"`
 	Difficulty      string             `json:"difficulty" binding:"required"`
 	DifficultyScore int                `json:"difficultyScore"`
@@ -258,7 +258,24 @@ func (h *ProblemHandler) Detail(c *gin.Context) {
 		view["mySolution"] = h.userSolution(p.ID, uid)
 	}
 	view["relatedProblems"] = h.relatedProblems(p, currentUID, 4)
-	view["solutions"] = h.publishedSolutions(p.ID)
+	solutions := h.publishedSolutions(p.ID)
+	// Prepend editorial as official solution if it exists
+	if version.Editorial != "" {
+		editorial := gin.H{
+			"id":          uint64(0),
+			"userId":      uint64(0),
+			"username":    "官方",
+			"title":       "官方题解",
+			"content":     version.Editorial,
+			"language":    "",
+			"isPublished": true,
+			"isOfficial":  true,
+			"likeCount":   0,
+			"updatedAt":   "",
+		}
+		solutions = append([]gin.H{editorial}, solutions...)
+	}
+	view["solutions"] = solutions
 	utils.OK(c, view)
 }
 
@@ -326,6 +343,76 @@ func (h *ProblemHandler) UpsertSolution(c *gin.Context) {
 		return
 	}
 	utils.OK(c, solution)
+}
+
+func (h *ProblemHandler) LikeSolution(c *gin.Context) {
+	uid, _ := middleware.CurrentUserID(c)
+	sid, err := strconv.ParseUint(c.Param("sid"), 10, 64)
+	if err != nil {
+		utils.BadRequest(c, "题解ID不合法")
+		return
+	}
+
+	var solution models.ProblemSolution
+	if err := h.DB.First(&solution, sid).Error; err != nil {
+		utils.NotFound(c, "题解不存在")
+		return
+	}
+
+	// Use transaction to handle concurrent likes safely
+	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var existing models.SolutionLike
+	err = tx.Where("solution_id = ? AND user_id = ?", sid, uid).First(&existing).Error
+	if err == nil {
+		// Already liked, unlike
+		tx.Delete(&existing)
+		tx.Model(&solution).UpdateColumn("like_count", gorm.Expr("GREATEST(like_count - 1, 0)"))
+		tx.Commit()
+		// Re-read actual count from DB
+		h.DB.First(&solution, sid)
+		utils.OK(c, gin.H{"liked": false, "likeCount": solution.LikeCount})
+		return
+	}
+
+	like := models.SolutionLike{SolutionID: sid, UserID: uid}
+	if err := tx.Create(&like).Error; err != nil {
+		tx.Rollback()
+		// Likely duplicate key from concurrent request, treat as already liked
+		h.DB.First(&solution, sid)
+		utils.OK(c, gin.H{"liked": true, "likeCount": solution.LikeCount})
+		return
+	}
+	tx.Model(&solution).UpdateColumn("like_count", gorm.Expr("like_count + 1"))
+	tx.Commit()
+	// Re-read actual count from DB
+	h.DB.First(&solution, sid)
+	utils.OK(c, gin.H{"liked": true, "likeCount": solution.LikeCount})
+}
+
+func (h *ProblemHandler) DeleteSolution(c *gin.Context) {
+	sid, err := strconv.ParseUint(c.Param("sid"), 10, 64)
+	if err != nil {
+		utils.BadRequest(c, "题解ID不合法")
+		return
+	}
+	var solution models.ProblemSolution
+	if err := h.DB.First(&solution, sid).Error; err != nil {
+		utils.NotFound(c, "题解不存在")
+		return
+	}
+	// Delete associated likes first
+	h.DB.Where("solution_id = ?", sid).Delete(&models.SolutionLike{})
+	if err := h.DB.Delete(&solution).Error; err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+	utils.OK(c, gin.H{"deleted": true, "id": sid})
 }
 
 func (h *ProblemHandler) MySolutions(c *gin.Context) {
@@ -559,51 +646,47 @@ func (h *ProblemHandler) Create(c *gin.Context) {
 		return
 	}
 
-	var count int64
-	h.DB.Model(&models.Problem{}).Where("id = ?", req.ID).Count(&count)
-	if count > 0 {
-		utils.BadRequest(c, "problem id already exists")
-		return
-	}
-
 	editorID, _ := middleware.CurrentUserID(c)
 	now := time.Now().UTC()
 	status := defaultProblemStatus(req.Status)
-	version := buildProblemVersion(0, 1, req, editorID, nil)
-	if err := h.DB.Create(&version).Error; err != nil {
-		utils.Server(c, err.Error())
-		return
-	}
 
+	// Create problem first (let database assign auto-increment ID)
 	problem := models.Problem{
-		ID:              req.ID,
 		Title:           req.Title,
 		Difficulty:      req.Difficulty,
 		DifficultyScore: req.DifficultyScore,
 		Tags:            req.Tags,
 		Source:          req.Source,
 		Status:          status,
-		CurrentVersionID: &version.ID,
-		LastEditedBy:    uint64Ptr(editorID),
 		ReviewComment:   req.ReviewComment,
 	}
-	if status == models.ProblemStatusPublished {
-		problem.PublishedVersionID = &version.ID
-		problem.PublishedAt = &now
-		problem.PublishedBy = uint64Ptr(editorID)
-		version.PublishedAt = &now
-	}
-
 	if err := h.DB.Create(&problem).Error; err != nil {
 		utils.Server(c, err.Error())
 		return
 	}
 
-	if err := h.persistVersionChildren(version.ID, req); err != nil {
+	// Now create version with the assigned problem ID
+	version := buildProblemVersion(problem.ID, 1, req, editorID, nil)
+	if err := h.DB.Create(&version).Error; err != nil {
 		utils.Server(c, err.Error())
 		return
 	}
-	if err := h.DB.Model(&version).Update("problem_id", problem.ID).Error; err != nil {
+
+	// Update problem with version references
+	problem.CurrentVersionID = &version.ID
+	if status == models.ProblemStatusPublished {
+		problem.PublishedVersionID = &version.ID
+		problem.PublishedAt = &now
+		problem.PublishedBy = &editorID
+		version.PublishedAt = &now
+	}
+	problem.LastEditedBy = &editorID
+	if err := h.DB.Save(&problem).Error; err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+
+	if err := h.persistVersionChildren(version.ID, req); err != nil {
 		utils.Server(c, err.Error())
 		return
 	}
@@ -1143,7 +1226,8 @@ func nilIfZero(v uint64) *uint64 {
 
 func (h *ProblemHandler) publishedSolutions(problemID uint64) []gin.H {
 	var rows []models.ProblemSolution
-	if err := h.DB.Where("problem_id = ? AND is_published = ?", problemID, true).Order("updated_at DESC").Find(&rows).Error; err != nil {
+	if err := h.DB.Where("problem_id = ? AND is_published = ?", problemID, true).
+		Order("is_official DESC, like_count DESC, updated_at DESC").Find(&rows).Error; err != nil {
 		return []gin.H{}
 	}
 	items := make([]gin.H, 0, len(rows))
@@ -1156,6 +1240,8 @@ func (h *ProblemHandler) publishedSolutions(problemID uint64) []gin.H {
 			"content":     item.Content,
 			"language":    item.Language,
 			"isPublished": item.IsPublished,
+			"isOfficial":  item.IsOfficial,
+			"likeCount":   item.LikeCount,
 			"updatedAt":   item.UpdatedAt.Format("2006-01-02 15:04"),
 		})
 	}

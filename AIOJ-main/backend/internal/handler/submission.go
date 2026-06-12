@@ -411,6 +411,7 @@ func submissionView(s *models.Submission, withCases bool) gin.H {
 		"source":        defaultSource(s.Source),
 		"status":        s.Status,
 		"language":      s.Language,
+		"code":          s.Code,
 		"runtime":       s.Runtime,
 		"runtimeMs":     s.RuntimeMS,
 		"memory":        s.Memory,

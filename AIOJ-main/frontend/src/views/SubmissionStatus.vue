@@ -2,6 +2,7 @@
   <div class="status-page page-container">
     <div class="page-header">
       <h2>评测状态</h2>
+      <p class="page-desc">查看提交记录和评测结果</p>
     </div>
 
     <div class="filter-bar card">
@@ -31,7 +32,16 @@
         v-loading="submissionStore.loading"
         stripe
         style="width: 100%"
+        @expand-change="handleExpandChange"
       >
+        <el-table-column type="expand" width="40">
+          <template #default="{ row }">
+            <div class="code-expand" v-loading="loadingCode[row.id]">
+              <pre v-if="submissionCodes[row.id]" class="code-block"><code>{{ submissionCodes[row.id] }}</code></pre>
+              <el-empty v-else-if="!loadingCode[row.id]" description="暂无代码" :image-size="40" />
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="id" label="提交编号" width="110" />
         <el-table-column label="题号" width="80">
           <template #default="{ row }">
@@ -89,10 +99,28 @@
 </template>
 
 <script setup>
-import { reactive, onMounted } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useSubmissionStore } from '@/stores/submission'
+import { submissionApi } from '@/api/submission'
 
 const submissionStore = useSubmissionStore()
+
+const submissionCodes = ref({})
+const loadingCode = ref({})
+
+async function handleExpandChange(row, expandedRows) {
+  const isExpanded = expandedRows.some(r => r.id === row.id)
+  if (!isExpanded || submissionCodes.value[row.id]) return
+  loadingCode.value[row.id] = true
+  try {
+    const res = await submissionApi.getDetail(row.id)
+    submissionCodes.value[row.id] = res.data?.code || '暂无代码'
+  } catch {
+    submissionCodes.value[row.id] = '加载失败'
+  } finally {
+    loadingCode.value[row.id] = false
+  }
+}
 
 const statusOptions = [
   'Pending',
@@ -162,27 +190,47 @@ onMounted(loadSubmissions)
 .page-header {
   margin-bottom: 20px;
 }
-.page-header h2 {
-  font-size: 24px;
-  font-weight: 700;
-}
+
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
+
 .link {
-  color: var(--accent-blue);
-  font-weight: 500;
+  color: var(--accent-primary);
+  font-weight: 600;
 }
 .link:hover {
   text-decoration: underline;
 }
+
 .pagination-wrap {
   display: flex;
   justify-content: center;
-  padding-top: 20px;
+  padding: 20px;
+}
+
+.code-expand {
+  padding: 12px 20px;
+  min-height: 60px;
+}
+
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
 }
 </style>

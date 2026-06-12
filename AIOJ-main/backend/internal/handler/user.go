@@ -258,9 +258,28 @@ func buildRecentSubmissions(db *gorm.DB, uid uint64) []models.SubmissionTimeline
 
 func isValidRole(role string) bool {
 	switch role {
-	case models.RoleUser, models.RoleProblemEditor, models.RoleReviewer, models.RoleOperator, models.RoleAdmin:
+	case models.RoleUser, models.RoleAdmin:
 		return true
 	default:
 		return false
 	}
+}
+
+func (h *UserHandler) Heatmap(c *gin.Context) {
+	uid, _ := middleware.CurrentUserID(c)
+	type agg struct {
+		Day   string
+		Count int
+	}
+	var rows []agg
+	h.DB.Raw(`SELECT DATE(created_at) AS day, COUNT(*) AS count
+		FROM submissions
+		WHERE user_id = ? AND created_at >= ? AND source = 'submit'
+		GROUP BY day ORDER BY day`,
+		uid, time.Now().AddDate(-1, 0, 0)).Scan(&rows)
+	out := make([]models.DailyCount, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, models.DailyCount{Date: r.Day, Count: r.Count})
+	}
+	utils.OK(c, gin.H{"items": out})
 }

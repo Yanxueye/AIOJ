@@ -75,10 +75,11 @@ func (t *TestCases) Scan(v interface{}) error {
 }
 
 type Problem struct {
-	ID                uint64           `gorm:"primaryKey" json:"id"`
+	ID                uint64           `gorm:"primaryKey;autoIncrement" json:"id"`
 	Title             string           `gorm:"type:varchar(128);not null;index" json:"title"`
 	Difficulty        string           `gorm:"type:varchar(16);index" json:"difficulty"`
 	DifficultyScore   int              `gorm:"default:800" json:"difficultyScore"`
+	Rating            int              `gorm:"default:800" json:"rating"`
 	Tags              StringSlice      `gorm:"type:json" json:"tags"`
 	Source            string           `gorm:"type:varchar(64)" json:"source"`
 	Status            string           `gorm:"type:varchar(16);index;default:'draft'" json:"status"`
@@ -213,11 +214,22 @@ type ProblemSolution struct {
 	Content     string    `gorm:"type:longtext" json:"content"`
 	Language    string    `gorm:"type:varchar(16)" json:"language"`
 	IsPublished bool      `gorm:"index;default:false" json:"isPublished"`
+	IsOfficial  bool      `gorm:"index;default:false" json:"isOfficial"`
+	LikeCount   int       `gorm:"default:0" json:"likeCount"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 func (ProblemSolution) TableName() string { return "problem_solutions" }
+
+type SolutionLike struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	SolutionID uint64    `gorm:"uniqueIndex:idx_solution_user;not null" json:"solutionId"`
+	UserID     uint64    `gorm:"uniqueIndex:idx_solution_user;not null" json:"userId"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+func (SolutionLike) TableName() string { return "solution_likes" }
 
 func (p Problem) OutputLimitKBOrDefault() int32 {
 	if p.CurrentVersion != nil && p.CurrentVersion.OutputLimitKB > 0 {

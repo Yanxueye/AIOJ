@@ -5,7 +5,7 @@
       <p>在这里填写题面、限制和测试用例，保存后会立即出现在题库列表中。</p>
     </div>
 
-    <ProblemForm ref="problemFormRef" :submitting="submitting" submit-text="创建题目" @submit="handleSubmit" />
+    <ProblemForm ref="problemFormRef" :submitting="submitting" :is-create="true" submit-text="创建题目" @submit="handleSubmit" />
   </div>
 </template>
 

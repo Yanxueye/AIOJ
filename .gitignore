@@ -31,3 +31,11 @@ remote_judge/judger.linux
 
 # Logs
 *.log
+
+# Environment files with secrets
+.env
+agent-service/.env
+
+# Claude Code session files
+CLAUDE.md
+GOAL.md

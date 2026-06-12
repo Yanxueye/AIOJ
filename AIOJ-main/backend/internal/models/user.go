@@ -3,11 +3,8 @@ package models
 import "time"
 
 const (
-	RoleUser          = "user"
-	RoleProblemEditor = "problem_editor"
-	RoleReviewer      = "reviewer"
-	RoleOperator      = "operator"
-	RoleAdmin         = "admin"
+	RoleUser  = "user"
+	RoleAdmin = "admin"
 )
 
 type User struct {
@@ -18,7 +15,7 @@ type User struct {
 	Role         string    `gorm:"type:varchar(16);default:'user';index" json:"role"`
 	Avatar       string    `gorm:"type:varchar(256)" json:"avatar"`
 	Bio          string    `gorm:"type:varchar(256)" json:"bio"`
-	Rating       int       `gorm:"default:1200" json:"rating"`
+	Rating       int       `gorm:"default:1000" json:"rating"`
 	CreatedAt    time.Time `json:"registeredAt"`
 	UpdatedAt    time.Time `json:"-"`
 }

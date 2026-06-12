@@ -96,10 +96,13 @@ func (h *StudyPlanHandler) Detail(c *gin.Context) {
 
 func (h *StudyPlanHandler) DailyChallenge(c *gin.Context) {
 	var item models.DailyChallenge
-	date := c.DefaultQuery("date", "2026-06-09")
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
 	if err := h.DB.Where("date = ?", date).First(&item).Error; err != nil {
-		utils.NotFound(c, "每日一题不存在")
-		return
+		// Fallback to the most recent challenge
+		if err := h.DB.Order("date DESC").First(&item).Error; err != nil {
+			utils.NotFound(c, "每日一题不存在")
+			return
+		}
 	}
 	utils.OK(c, item)
 }

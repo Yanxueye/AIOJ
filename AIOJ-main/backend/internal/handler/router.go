@@ -26,6 +26,8 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 	submission := &SubmissionHandler{DB: db, Broker: broker, Judger: jdClient}
 	ai := &AIHandler{DB: db, Client: aisvc.NewClient(cfg.AI)}
 	audit := &AuditHandler{DB: db}
+	knowledge := &KnowledgeHandler{DB: db}
+	recommendation := &RecommendationHandler{DB: db}
 
 	r.GET("/healthz", func(c *gin.Context) { utils.OK(c, gin.H{"status": "ok"}) })
 
@@ -41,12 +43,21 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		// Public GET for list/detail — optional token is read by handler to
 		// enrich the response with the caller's `accepted` flag.
 		api.GET("/problems", optionalAuth(jwt), problem.List)
+
+		// Knowledge graph — optional token enriches with user mastery data.
+		api.GET("/knowledge", knowledge.List)
+		api.GET("/knowledge/graph", optionalAuth(jwt), knowledge.Graph)
+		api.GET("/knowledge/:id/problems", knowledge.ProblemsForKP)
+		api.GET("/recommendations/daily", optionalAuth(jwt), recommendation.DailyRecommendation)
 	}
 
 	authed := r.Group("/api", middleware.JWTAuth(jwt))
 	{
 		authed.GET("/user/profile", user.Profile)
 		authed.PUT("/user/profile", user.UpdateProfile)
+		authed.GET("/user/heatmap", user.Heatmap)
+		authed.GET("/learning-path", recommendation.LearningPath)
+		authed.GET("/weakness-analysis", recommendation.WeaknessAnalysis)
 		authed.GET("/study-plans/checkins", studyPlan.Checkins)
 		authed.GET("/admin/users", middleware.RequireAdmin(), user.AdminList)
 		authed.PUT("/admin/users/:id/role", middleware.RequireAdmin(), user.AdminUpdateRole)
@@ -60,14 +71,16 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		authed.GET("/my/solutions", problem.MySolutions)
 		authed.GET("/my/solutions/:id", problem.MySolutionDetail)
 		authed.GET("/solutions/:id", problem.SolutionDetail)
-		authed.POST("/problems", middleware.RequireProblemEditor(), problem.Create)
-		authed.GET("/admin/problems/:id", middleware.RequireProblemEditor(), problem.AdminDetail)
-		authed.GET("/admin/problems/:id/versions", middleware.RequireProblemEditor(), problem.Versions)
-		authed.PUT("/problems/:id", middleware.RequireProblemEditor(), problem.Update)
-		authed.POST("/admin/problems/:id/publish", middleware.RequireReviewer(), problem.Publish)
-		authed.POST("/admin/problems/:id/rollback", middleware.RequireProblemEditor(), problem.Rollback)
-		authed.POST("/admin/problems/:id/rejudge", middleware.RequireOperator(), problem.Rejudge)
-		authed.GET("/admin/problems/:id/rejudge-jobs", middleware.RequireOperator(), problem.RejudgeJobs)
+		authed.POST("/solutions/:sid/like", problem.LikeSolution)
+		authed.DELETE("/solutions/:sid", middleware.RequireAdmin(), problem.DeleteSolution)
+		authed.POST("/problems", middleware.RequireAdmin(), problem.Create)
+		authed.GET("/admin/problems/:id", middleware.RequireAdmin(), problem.AdminDetail)
+		authed.GET("/admin/problems/:id/versions", middleware.RequireAdmin(), problem.Versions)
+		authed.PUT("/problems/:id", middleware.RequireAdmin(), problem.Update)
+		authed.POST("/admin/problems/:id/publish", middleware.RequireAdmin(), problem.Publish)
+		authed.POST("/admin/problems/:id/rollback", middleware.RequireAdmin(), problem.Rollback)
+		authed.POST("/admin/problems/:id/rejudge", middleware.RequireAdmin(), problem.Rejudge)
+		authed.GET("/admin/problems/:id/rejudge-jobs", middleware.RequireAdmin(), problem.RejudgeJobs)
 		authed.DELETE("/problems/:id", middleware.RequireAdmin(), problem.Delete)
 
 		authed.POST("/problems/:id/run", submission.Run)
@@ -104,6 +117,7 @@ func optionalAuth(mgr *utils.JWTManager) gin.HandlerFunc {
 			if claims, err := mgr.Parse(header[7:]); err == nil {
 				c.Set("x-user-id", claims.UserID)
 				c.Set("x-username", claims.Username)
+				c.Set("x-user-role", claims.Role)
 			}
 		}
 		c.Next()

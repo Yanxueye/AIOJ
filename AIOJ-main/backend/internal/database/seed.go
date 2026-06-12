@@ -26,6 +26,12 @@ func Seed(conn *gorm.DB) error {
 	if err := seedAnnouncements(conn); err != nil {
 		return err
 	}
+	if err := seedKnowledge(conn); err != nil {
+		return err
+	}
+	if err := seedProblemKnowledgeMappings(conn); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -300,6 +306,10 @@ func seedProblems(conn *gorm.DB) error {
 	}
 
 	log.Printf("[seed] %d versioned problems inserted", len(problems))
+
+	// Set auto-increment counter to start after the highest seeded ID
+	conn.Exec("ALTER TABLE problems AUTO_INCREMENT = 2000")
+
 	return nil
 }
 
@@ -387,15 +397,63 @@ func seedStudyPlans(conn *gorm.DB) error {
 }
 
 func seedDailyChallenges(conn *gorm.DB) error {
+	challenges := []models.DailyChallenge{
+		{ProblemID: 1002, Title: "最长回文子串", Difficulty: "中等", Date: "2026-06-09"},
+		{ProblemID: 1004, Title: "零钱兑换", Difficulty: "中等", Date: "2026-06-10"},
+		{ProblemID: 1005, Title: "岛屿数量", Difficulty: "中等", Date: "2026-06-11"},
+		{ProblemID: 1001, Title: "两数之和", Difficulty: "简单", Date: "2026-06-12"},
+		{ProblemID: 1003, Title: "合并K个升序链表", Difficulty: "困难", Date: "2026-06-13"},
+	}
+	for _, ch := range challenges {
+		var count int64
+		conn.Model(&models.DailyChallenge{}).Where("date = ?", ch.Date).Count(&count)
+		if count == 0 {
+			conn.Create(&ch)
+		}
+	}
+	return nil
+}
+
+func seedProblemKnowledgeMappings(conn *gorm.DB) error {
 	var count int64
-	conn.Model(&models.DailyChallenge{}).Where("date = ?", "2026-06-09").Count(&count)
+	conn.Model(&models.ProblemKnowledgePoint{}).Count(&count)
 	if count > 0 {
 		return nil
 	}
-	return conn.Create(&models.DailyChallenge{
-		ProblemID:  1002,
-		Title:      "最长回文子串",
-		Difficulty: "中等",
-		Date:       "2026-06-09",
-	}).Error
+
+	// Map problems to knowledge points based on their tags and content
+	mappings := []models.ProblemKnowledgePoint{
+		// 1001 两数之和 - 数组, 哈希表
+		{ProblemID: 1001, KnowledgePointID: getKPID(conn, "哈希表")},
+		{ProblemID: 1001, KnowledgePointID: getKPID(conn, "二分查找")},
+		// 1002 最长回文子串 - 字符串, 动态规划
+		{ProblemID: 1002, KnowledgePointID: getKPID(conn, "动态规划")},
+		{ProblemID: 1002, KnowledgePointID: getKPID(conn, "字符串哈希")},
+		// 1003 合并K个升序链表 - 堆, 链表, 分治
+		{ProblemID: 1003, KnowledgePointID: getKPID(conn, "堆")},
+		{ProblemID: 1003, KnowledgePointID: getKPID(conn, "分治")},
+		// 1004 零钱兑换 - 动态规划, 贪心
+		{ProblemID: 1004, KnowledgePointID: getKPID(conn, "动态规划")},
+		{ProblemID: 1004, KnowledgePointID: getKPID(conn, "背包DP")},
+		// 1005 岛屿数量 - 搜索, 图论, 并查集
+		{ProblemID: 1005, KnowledgePointID: getKPID(conn, "BFS")},
+		{ProblemID: 1005, KnowledgePointID: getKPID(conn, "DFS")},
+		{ProblemID: 1005, KnowledgePointID: getKPID(conn, "并查集")},
+	}
+
+	for _, m := range mappings {
+		if m.KnowledgePointID > 0 {
+			conn.Create(&m)
+		}
+	}
+	log.Println("[seed] problem-knowledge mappings seeded")
+	return nil
+}
+
+func getKPID(conn *gorm.DB, name string) uint64 {
+	var kp models.KnowledgePoint
+	if err := conn.Where("name = ?", name).First(&kp).Error; err != nil {
+		return 0
+	}
+	return kp.ID
 }

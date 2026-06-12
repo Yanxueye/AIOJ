@@ -77,78 +77,9 @@ func CurrentUserRole(c *gin.Context) string {
 
 // RequireAdmin only allows admin users through.
 func RequireAdmin() gin.HandlerFunc {
-	return RequireRoles(models.RoleAdmin)
-}
-
-func RequireRoles(allowed ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role := CurrentUserRole(c)
-		for _, item := range allowed {
-			if role == item {
-				c.Next()
-				return
-			}
-		}
-		if len(allowed) == 0 {
-			utils.Forbidden(c, "role required")
-			return
-		}
-		utils.Forbidden(c, "insufficient role")
-		return
-	}
-}
-
-func CanEditProblems(role string) bool {
-	switch role {
-	case models.RoleProblemEditor, models.RoleAdmin:
-		return true
-	default:
-		return false
-	}
-}
-
-func CanReviewProblems(role string) bool {
-	switch role {
-	case models.RoleReviewer, models.RoleAdmin:
-		return true
-	default:
-		return false
-	}
-}
-
-func CanTriggerRejudge(role string) bool {
-	switch role {
-	case models.RoleOperator, models.RoleAdmin:
-		return true
-	default:
-		return false
-	}
-}
-
-func RequireProblemEditor() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !CanEditProblems(CurrentUserRole(c)) {
-			utils.Forbidden(c, "problem editor role required")
-			return
-		}
-		c.Next()
-	}
-}
-
-func RequireReviewer() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !CanReviewProblems(CurrentUserRole(c)) {
-			utils.Forbidden(c, "reviewer role required")
-			return
-		}
-		c.Next()
-	}
-}
-
-func RequireOperator() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !CanTriggerRejudge(CurrentUserRole(c)) {
-			utils.Forbidden(c, "operator role required")
+		if CurrentUserRole(c) != models.RoleAdmin {
+			utils.Forbidden(c, "admin role required")
 			return
 		}
 		c.Next()
