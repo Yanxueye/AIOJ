@@ -164,7 +164,8 @@ onMounted(async () => {
   }
   try {
     const tagResp = await tagApi.getList()
-    tags.value = tagResp.data?.items?.map(t => t.name) || []
+    const cats = tagResp.data?.categories || []
+    tags.value = cats.flatMap(c => (c.tags || []).map(t => t.name))
   } catch {
     // Fallback: keep the empty array, dropdown will just show no options
   }
@@ -173,9 +174,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-header {
-  margin-bottom: 20px;
+.page-header { margin-bottom: 20px }
+.page-header h2 {
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  font-size: 26px; font-weight: 700; letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--text-primary) 30%, var(--accent-gold, #e6a23c) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
+.page-header .page-desc { color: var(--text-muted); font-family: var(--font-mono); font-size: 13px }
 
 .filter-bar {
   display: flex;

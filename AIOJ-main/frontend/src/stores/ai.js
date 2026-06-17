@@ -21,7 +21,7 @@ export const useAIStore = defineStore('ai', () => {
     })
   }
 
-  async function sendMessage(content, problemContext = null) {
+  async function sendMessage(content, problemContext = null, codeContext = null) {
     addMessage('user', content)
     loading.value = true
     chatLoading.value = true
@@ -34,7 +34,9 @@ export const useAIStore = defineStore('ai', () => {
           content: m.content
         })),
         problem_id: problemContext?.id || null,
-        conversation_id: currentConversationId.value || ''
+        conversation_id: currentConversationId.value || '',
+        code_language: codeContext?.language || null,
+        code: codeContext?.code || null
       })
       currentConversationId.value = res.data.conversationId || currentConversationId.value
       addMessage('assistant', res.data.reply)
@@ -85,13 +87,13 @@ export const useAIStore = defineStore('ai', () => {
     }
   }
 
-  async function solveProblem({ problemId, question = '', level = 'hint' }) {
+  async function solveProblem({ problemId, question = '', level = 'hint', language = '', code = '' }) {
     addMessage('user', level === 'hint' ? '请给我这道题的解题提示。' : '请讲解这道题的解法。')
     loading.value = true
     solveLoading.value = true
     error.value = null
     try {
-      const res = await aiApi.solveProblem({ problemId, question, level })
+      const res = await aiApi.solveProblem({ problemId, question, level, language, code })
       addMessage('assistant', formatSolve(res.data))
       return res.data
     } catch (err) {
@@ -134,15 +136,28 @@ export const useAIStore = defineStore('ai', () => {
     }
   }
 
+  async function deleteConversation(id) {
+    await aiApi.deleteConversation(id)
+    conversations.value = conversations.value.filter(c => c.id !== id)
+    if (currentConversationId.value === id) {
+      clearMessages()
+    }
+  }
+
   function formatDiagnosis(data = {}) {
-    const issues = (data.issues || []).map(i => `- **${i.severity || 'info'}**：${i.message || ''}${i.hint ? `。${i.hint}` : ''}`).join('\n')
+    const complexity = []
+    if (data.timeComplexity) complexity.push(`时间：${data.timeComplexity}`)
+    if (data.spaceComplexity) complexity.push(`空间：${data.spaceComplexity}`)
+    const tags = (data.algorithmTags || []).map(t => `\`${t}\``).join(' ')
     const suggestions = (data.suggestions || []).map(s => `- ${s}`).join('\n')
-    return `### 代码诊断\n\n${data.summary || ''}\n\n#### 发现的问题\n\n${issues || '- 暂未发现明显问题'}\n\n#### 建议\n\n${suggestions || '- 补充边界用例继续验证'}`
+    return `### 代码分析\n\n${complexity.length ? `**复杂度**：${complexity.join(' · ')}\n\n` : ''}${tags ? `**算法标签**：${tags}\n\n` : ''}${suggestions ? `**建议**\n\n${suggestions}` : ''}`
   }
 
   function formatSolve(data = {}) {
-    const hints = (data.hints || []).map(h => `- ${h}`).join('\n')
-    return `${data.answer || ''}${hints ? `\n\n#### 提示\n\n${hints}` : ''}${data.complexity ? `\n\n#### 复杂度\n\n${data.complexity}` : ''}`
+    const complexity = []
+    if (data.timeComplexity) complexity.push(`时间：${data.timeComplexity}`)
+    if (data.spaceComplexity) complexity.push(`空间：${data.spaceComplexity}`)
+    return `${data.answer || ''}${complexity.length ? `\n\n**复杂度**：${complexity.join(' · ')}` : ''}`
   }
 
   function formatKnowledgeGraph(data = {}) {
@@ -152,6 +167,6 @@ export const useAIStore = defineStore('ai', () => {
   return {
     conversations, currentMessages, loading, chatLoading, diagnoseLoading, solveLoading, error, currentConversationId,
     sendMessage, loadHistory, loadMessages, diagnoseCode, solveProblem, buildKnowledgeGraph,
-    clearMessages, startNewConversation, addMessage
+    clearMessages, startNewConversation, deleteConversation, addMessage
   }
 })

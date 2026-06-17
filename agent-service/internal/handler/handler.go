@@ -10,20 +10,22 @@ import (
 	"time"
 
 	"agent-service/internal/ai"
-	"agent-service/internal/judge"
 	"agent-service/internal/rag"
 
 	"github.com/gin-gonic/gin"
 )
 
+// CandidateTagDict is the unified algorithm tag dictionary.
+// LLM outputs for algorithmTags MUST be selected from this list.
+const CandidateTagDict = "枚举、模拟、排序、二分、双指针、前缀和、差分、分治、贪心、递归、离散化、数组、链表、栈、单调栈、队列、单调队列、堆、哈希表、并查集、字典树、线段树、树状数组、平衡树、分块、动态规划、背包DP、区间DP、树形DP、数位DP、状态压缩DP、DP优化、计数DP、概率DP、博弈论DP、图论、最短路、最小生成树、网络流、二分图、拓扑排序、强连通分量、桥和割点、树上问题、LCA、数学、质数、GCD/LCM、快速幂、模运算、组合数学、容斥原理、概率期望、矩阵、高斯消元、莫比乌斯反演、博弈论、字符串、字符串处理、KMP、Trie、后缀数组、后缀自动机、AC自动机、Manacher、哈希、搜索、BFS、DFS、迭代加深、IDA*、双向BFS、启发式搜索、折半搜索、回溯、贪心算法、区间贪心、排序贪心、反悔贪心、计算几何、向量、凸包、半平面交、最近点对、旋转卡壳、位运算、位操作、状态压缩、集合运算"
+
 type Handler struct {
-	ai    *ai.Client
-	judge *judge.Client
-	rag   *rag.Service
+	ai  *ai.Client
+	rag *rag.Service
 }
 
-func New(aiClient *ai.Client, judgeClient *judge.Client, ragService *rag.Service) *Handler {
-	return &Handler{ai: aiClient, judge: judgeClient, rag: ragService}
+func New(aiClient *ai.Client, ragService *rag.Service) *Handler {
+	return &Handler{ai: aiClient, rag: ragService}
 }
 
 func (h *Handler) Health(c *gin.Context) {
@@ -36,189 +38,147 @@ func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, status)
 }
 
-// HintRequest is the request for getting a hint on a wrong submission
-type HintRequest struct {
-	ProblemTitle string `json:"problemTitle"`
-	ProblemDesc  string `json:"problemDesc"`
-	Code         string `json:"code"`
-	Language     string `json:"language"`
-	ErrorInfo    string `json:"errorInfo"`
-	Status       string `json:"status"`
+// GenerateSolutionPayload is the payload for generating a solution draft
+type GenerateSolutionPayload struct {
+	ProblemID     uint64       `json:"problemId"`
+	ProblemTitle  string       `json:"problemTitle"`
+	ProblemDesc   string       `json:"problemContent"`
+	Editorial     string       `json:"problemEditorial,omitempty"`
+	AlgorithmTags []string     `json:"algorithmTags,omitempty"`
+	Language      string       `json:"language"`
+	Code          string       `json:"code"`
+	// Nested problem object (sent by AIOJ backend)
+	Problem       *ProblemPayload `json:"problem,omitempty"`
 }
 
-// Hint provides a small hint for a wrong submission
-func (h *Handler) Hint(c *gin.Context) {
-	var req HintRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-
-	prompt := fmt.Sprintf(`你是一个算法竞赛教练。用户正在做一道题目，提交错误了，请给出一个小提示，但不要直接给出完整解法。
-
-题目: %s
-题目描述: %s
-用户语言: %s
-提交状态: %s
-错误信息: %s
-用户代码:
-%s
-
-请严格按以下JSON格式返回：
-{"hint": "简短提示（不超过3句话）", "relatedTopics": ["相关知识点"], "severity": "info/warning/error"}`,
-		req.ProblemTitle, req.ProblemDesc, req.Language, req.Status, req.ErrorInfo, req.Code)
-
-	resp, err := h.ai.Chat([]ai.Message{
-		{Role: "system", Content: "你是一个友好的算法竞赛教练，善于用启发式的方式引导学生思考。请始终以JSON格式回复。"},
-		{Role: "user", Content: prompt},
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务暂时不可用，请稍后重试"})
-		return
-	}
-
-	// Try to parse structured JSON response
-	var structured map[string]interface{}
-	if err := json.Unmarshal([]byte(resp), &structured); err == nil {
-		structured["rawMarkdown"] = resp
-		c.JSON(http.StatusOK, structured)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"hint": resp, "rawMarkdown": resp})
-}
-
-// AnalyzeRequest is the request for analyzing an accepted submission
-type AnalyzeRequest struct {
-	ProblemTitle   string `json:"problemTitle"`
-	ProblemDesc    string `json:"problemDesc"`
-	ExpectedTopics []string `json:"expectedTopics"`
-	Code           string `json:"code"`
-	Language       string `json:"language"`
-	RuntimeMS      int    `json:"runtimeMs"`
-	MemoryKB       int    `json:"memoryKb"`
-}
-
-// Analyze provides code analysis for an accepted submission
-func (h *Handler) Analyze(c *gin.Context) {
-	var req AnalyzeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-
-	topics := ""
-	for i, t := range req.ExpectedTopics {
-		if i > 0 {
-			topics += ", "
-		}
-		topics += t
-	}
-
-	prompt := fmt.Sprintf(`分析以下通过的代码。
-
-题目: %s
-语言: %s
-运行时间: %dms
-内存: %dKB
-题目考察知识点: %s
-代码:
-%s
-
-请严格按以下JSON格式返回：
-{
-  "summary": "一句话总结代码质量",
-  "timeComplexity": "时间复杂度，用Markdown格式说明，如：**O(n log n)** — 使用了快速排序",
-  "spaceComplexity": "空间复杂度，用Markdown格式说明，如：**O(n)** — 需要额外数组存储",
-  "algorithmTags": ["使用的算法标签"],
-  "codeStyle": "代码风格评价（1-2句）",
-  "issues": [{"line": 行号, "severity": "warning/info", "message": "问题描述", "hint": "建议"}],
-  "suggestions": ["优化建议1", "优化建议2"]
-}`,
-		req.ProblemTitle, req.Language, req.RuntimeMS, req.MemoryKB, topics, req.Code)
-
-	resp, err := h.ai.Chat([]ai.Message{
-		{Role: "system", Content: "你是一个资深的算法竞赛教练和代码审查专家。请始终以JSON格式回复，timeComplexity和spaceComplexity字段使用Markdown格式（如 **O(n)**）。"},
-		{Role: "user", Content: prompt},
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务暂时不可用，请稍后重试"})
-		return
-	}
-
-	// Try to parse structured JSON response
-	var structured map[string]interface{}
-	if err := json.Unmarshal([]byte(resp), &structured); err == nil {
-		structured["rawMarkdown"] = resp
-		c.JSON(http.StatusOK, structured)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"analysis": resp, "rawMarkdown": resp})
-}
-
-// GenerateSolutionRequest is the request for generating a solution draft
-type GenerateSolutionRequest struct {
-	ProblemTitle string `json:"problemTitle"`
-	ProblemDesc  string `json:"problemDesc"`
-	Code         string `json:"code"`
-	Language     string `json:"language"`
-	Attempts     []AttemptInfo `json:"attempts"`
-}
-
-type AttemptInfo struct {
-	Status  string `json:"status"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// GenerateSolution generates a solution draft based on submission history
+// GenerateSolution generates a solution draft
 func (h *Handler) GenerateSolution(c *gin.Context) {
-	var req GenerateSolutionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-
-	attemptsDesc := ""
-	for i, a := range req.Attempts {
-		attemptsDesc += fmt.Sprintf("\n第%d次尝试: 状态=%s, 错误=%s", i+1, a.Status, a.Message)
-	}
-
-	prompt := fmt.Sprintf(`用户通过了一道算法题，请帮他生成一篇题解草稿。
-
-题目: %s
-题目描述: %s
-最终通过的代码（%s）:
-%s
-用户的尝试历史:
-%s
-
-请生成一篇题解，包含：
-1. 解题思路概述
-2. 踩过的坑（从尝试历史中总结）
-3. 实现亮点
-4. 相关公式或关键算法（如状态转移方程等）
-5. 时间/空间复杂度
-
-用Markdown格式输出。`,
-		req.ProblemTitle, req.ProblemDesc, req.Language, req.Code, attemptsDesc)
-
-	resp, err := h.ai.Chat([]ai.Message{
-		{Role: "system", Content: "你是一个善于写作的算法题解作者，能清晰地解释解题思路。"},
-		{Role: "user", Content: prompt},
-	})
+	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务暂时不可用，请稍后重试"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "failed to read body"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"solution": resp})
+
+	// Try envelope format first
+	var envelope PipelineEnvelope
+	var req GenerateSolutionPayload
+	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Task != "" {
+		if err := json.Unmarshal(envelope.Payload, &req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "invalid payload"})
+			return
+		}
+	} else {
+		if err := json.Unmarshal(body, &req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "invalid request"})
+			return
+		}
+	}
+
+	// Merge nested problem object
+	if req.Problem != nil {
+		if req.ProblemID == 0 {
+			req.ProblemID = req.Problem.ID
+		}
+		if req.ProblemTitle == "" {
+			req.ProblemTitle = req.Problem.Title
+		}
+		if req.ProblemDesc == "" {
+			req.ProblemDesc = req.Problem.Content
+		}
+		if req.Editorial == "" {
+			req.Editorial = req.Problem.Editorial
+		}
+		if len(req.AlgorithmTags) == 0 && len(req.Problem.Tags) > 0 {
+			req.AlgorithmTags = req.Problem.Tags
+		}
+	}
+
+	// RAG retrieval using algorithm tags
+	ragContext := ""
+	if h.rag != nil && h.rag.IsInitialized() && len(req.AlgorithmTags) > 0 {
+		ragContext = h.rag.BuildContext(strings.Join(req.AlgorithmTags, " "), 2000)
+	}
+
+	// Build prompt
+	systemPrompt := "你是一个算法竞赛题解撰写专家。你的任务是帮助用户基于其通过的代码编写一篇高质量的题解。要求：文风严谨、逻辑清晰、语言简洁，不要使用emoji，不要有AI套话（如'首先'、'其次'、'总之'等过渡词），直接切入要点，用科学论文般的简洁风格。请始终以JSON格式回复。"
+
+	userPrompt := fmt.Sprintf("题目: %s\n题目描述: %s", req.ProblemTitle, req.ProblemDesc)
+
+	if req.Editorial != "" {
+		userPrompt += fmt.Sprintf("\n\n官方题解:\n%s", req.Editorial)
+	}
+
+	if len(req.AlgorithmTags) > 0 {
+		userPrompt += fmt.Sprintf("\n\n算法标签: %s", strings.Join(req.AlgorithmTags, ", "))
+	}
+
+	if ragContext != "" {
+		userPrompt += fmt.Sprintf("\n\n相关知识（从 OI-Wiki 检索）：\n---\n%s\n---", ragContext)
+	}
+
+	userPrompt += fmt.Sprintf(`
+
+用户通过的代码（%s）:
+%s`, req.Language, req.Code)
+
+	userPrompt += fmt.Sprintf(`
+
+请基于以上信息生成一篇题解草稿，包含：
+1. 解题思路概述
+2. 时间空间复杂度
+
+输出要求：
+- title：题解标题，简洁概括解法
+- content：题解正文，用 Markdown 格式，直接切入要点，不要有AI套话
+- algorithmTags：题解涉及的算法标签，必须从候选标签中选取
+- complexity.time / complexity.space：纯大O表示法，用Markdown加粗（如 **O(n)**），不要附加说明文字
+
+候选算法标签（algorithmTags 必须从中选取）：
+%s
+
+请严格按以下JSON格式返回（不要包含其他文本）：
+{
+  "title": "题解标题",
+  "content": "题解内容（Markdown）",
+  "algorithmTags": ["哈希表"],
+  "complexity": {"time": "**O(n)**", "space": "**O(n)**"}
+}`, CandidateTagDict)
+
+	t0 := time.Now()
+	resp, err := h.ai.Chat([]ai.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	})
+	log.Printf("[ai] generate-solution LLM call took %v", time.Since(t0))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": -1, "data": gin.H{
+			"solution":    "AI 服务暂时不可用，请稍后重试。",
+			"provider":    "unavailable",
+		}})
+		return
+	}
+
+	// Try to parse structured JSON response
+	var structured map[string]interface{}
+	if json.Unmarshal([]byte(resp), &structured) == nil {
+		structured["rawMarkdown"] = resp
+		structured["provider"] = "agent-service"
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": structured})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
+		"solution":    resp,
+		"rawMarkdown": resp,
+		"provider":    "agent-service",
+	}})
 }
 
 // ChatRequest is a general chat request
 type ChatRequest struct {
 	Messages []ai.Message `json:"messages"`
 	Context  string       `json:"context"`
+	Tags     []string     `json:"-"` // For RAG query, not from JSON
 }
 
 // ChatPayload is the AIOJ backend's chat request format (inside envelope)
@@ -228,6 +188,8 @@ type ChatPayload struct {
 	Message        string          `json:"message"`
 	History        []ai.Message    `json:"history"`
 	Problem        *ProblemPayload `json:"problem,omitempty"`
+	CodeLanguage   string          `json:"codeLanguage,omitempty"`
+	Code           string          `json:"code,omitempty"`
 }
 
 // PipelineEnvelope is the wrapper format used by AIOJ backend's AI client
@@ -235,6 +197,13 @@ type PipelineEnvelope struct {
 	Task    string          `json:"task"`
 	Model   string          `json:"model,omitempty"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+// FailedCaseData represents the first failing test case
+type FailedCaseData struct {
+	Input    string `json:"input"`
+	Expected string `json:"expected"`
+	Actual   string `json:"actual"`
 }
 
 // CodeDiagnosisPayload is the payload for code diagnosis
@@ -254,6 +223,7 @@ type CodeDiagnosisPayload struct {
 	Samples        []SampleData        `json:"samples,omitempty"`
 	AlgorithmTags  []string            `json:"algorithmTags,omitempty"`
 	RecentSubs     []SubmissionData    `json:"recentSubmissions,omitempty"`
+	FailedCase     *FailedCaseData     `json:"failedCase,omitempty"`
 	// Nested problem object (sent by AIOJ backend)
 	Problem        *ProblemPayload     `json:"problem,omitempty"`
 }
@@ -397,37 +367,60 @@ func (h *Handler) handleDiagnosis(c *gin.Context, req *CodeDiagnosisPayload) {
 当前用户代码:
 %s`, req.ErrorMessage, req.Code)
 
+	// Add failed test case for non-AC submissions
+	if req.FailedCase != nil && req.JudgeStatus != "Accepted" {
+		prompt += fmt.Sprintf(`
+
+未通过的测试点:
+  输入: %s
+  预期输出: %s
+  实际输出: %s`, req.FailedCase.Input, req.FailedCase.Expected, req.FailedCase.Actual)
+	}
+
+	prompt += fmt.Sprintf(`
+
+候选算法标签（algorithmTags 必须从中选取）：
+%s`, CandidateTagDict)
+
 	if req.JudgeStatus == "Accepted" {
 		prompt += `
 
-重要提示：该代码已通过全部测试用例，评测结果为 Accepted。请不要质疑代码的正确性，不要假设存在格式问题（如缺少换行符）。请专注于分析算法思路、复杂度和优化空间。
+重要提示：该代码已通过全部测试用例。请不要质疑代码的正确性，不要假设存在格式问题。请专注于分析算法思路、复杂度和优化空间。
+
+输出要求：
+- timeComplexity：用户代码的时间复杂度，纯大O表示法，用Markdown加粗（如 **O(n)**），不要附加说明文字
+- spaceComplexity：用户代码的空间复杂度，纯大O表示法，用Markdown加粗，不要附加说明文字
+- algorithmTags：用户代码实际实现的算法标签，必须从候选标签中选取
+- suggestions：一句话简要建议
 
 请严格按以下JSON格式返回（不要包含其他文本）：
 {
-  "summary": "一句话总结代码质量和算法思路",
-  "timeComplexity": "时间复杂度，用Markdown格式说明，如：**O(n)** — 说明",
-  "spaceComplexity": "空间复杂度，用Markdown格式说明，如：**O(n)** — 说明",
-  "algorithmTags": ["使用的算法标签"],
-  "issues": [],
-  "suggestions": ["可选的优化建议或代码风格改进"]
+  "timeComplexity": "**O(n)**",
+  "spaceComplexity": "**O(1)**",
+  "algorithmTags": ["哈希表"],
+  "suggestions": ["建议内容"]
 }`
 	} else {
 		prompt += `
 
+输出要求：
+- timeComplexity：用户代码的时间复杂度，纯大O表示法，用Markdown加粗（如 **O(n)**），不要附加说明文字
+- spaceComplexity：用户代码的空间复杂度，纯大O表示法，用Markdown加粗，不要附加说明文字
+- algorithmTags：用户代码实际实现的算法标签，必须从候选标签中选取
+- suggestions：一句话简要建议
+
 请严格按以下JSON格式返回（不要包含其他文本）：
 {
-  "summary": "一句话总结问题",
-  "timeComplexity": "时间复杂度，用Markdown格式说明，如：**O(n²)** — 双重循环",
-  "spaceComplexity": "空间复杂度，用Markdown格式说明，如：**O(n)** — 需要额外数组",
-  "algorithmTags": ["涉及的算法标签"],
-  "issues": [{"line": 行号, "severity": "error/warning/info", "message": "问题描述", "hint": "修复建议"}],
-  "suggestions": ["改进建议1", "改进建议2"]
+  "timeComplexity": "**O(n)**",
+  "spaceComplexity": "**O(1)**",
+  "algorithmTags": ["哈希表"],
+  "suggestions": ["建议内容"]
 }`
 	}
 
-	systemMsg := "你是一个资深的算法竞赛教练，善于分析代码问题并给出精准的改进建议。请始终以JSON格式回复，timeComplexity和spaceComplexity字段使用Markdown格式（如 **O(n)** ）。"
+	systemMsg := "你是一个算法竞赛教练。用户提交的代码未通过评测，请分析代码中的问题并给出改进建议。回答简洁，直接指出核心问题，不要泛泛而谈。请始终以JSON格式回复。"
 	if req.JudgeStatus == "Accepted" {
-		systemMsg = "你是一个资深的算法竞赛教练和代码审查专家。用户提交的代码已通过全部测试用例（Accepted），请分析代码的算法思路、时间空间复杂度和可优化空间。注意：代码是正确的，不要质疑其正确性，不要假设缺少换行符或其他格式问题。请始终以JSON格式回复，timeComplexity和spaceComplexity字段使用Markdown格式（如 **O(n)** ）。"
+		systemMsg = "你是一个算法竞赛教练和代码审查专家。用户提交的代码已通过全部测试用例，请分析代码的算法思路、时间空间复杂度和可优化空间。代码是正确的，不要质疑其正确性，不要假设存在格式问题。回答简洁，直接给出结论。请始终以JSON格式回复。"
 	}
 
 	t0 := time.Now()
@@ -523,6 +516,7 @@ type KnowledgeGraphPayload struct {
 }
 
 type ProblemData struct {
+	ID       uint64   `json:"id"`
 	Title    string   `json:"title"`
 	Tags     []string `json:"tags"`
 	Status   string   `json:"status"`
@@ -575,19 +569,33 @@ func (h *Handler) KnowledgeGraph(c *gin.Context) {
 			prompt += fmt.Sprintf("- %s: 解决 %d/%d 题, 通过率 %.1f%%\n", tag, stats.Solved, stats.Attempted, stats.ACRate)
 		}
 	}
-	prompt += `
+	prompt += fmt.Sprintf(`
 
-请严格按照以下JSON格式返回知识图谱数据：
+输出要求：
+- nodes：知识图谱节点，每个节点包含 id、label（算法名称）、mastery（掌握等级）、category（所属分类）
+  - mastery 为枚举类型，根据做题数量、AC率、题目难度综合判断：
+    - unattempted：未接触 — 没做过相关题目
+    - learning：初学 — 做过少量题目，还在摸索
+    - familiar：了解 — 做过一些题目，基本理解思路
+    - proficient：熟练 — 做过较多题目，能独立解题
+    - mastered：精通 — 做过大量题目包括困难题，解题稳定
+  - category 必须是以下分类之一：基础算法、数据结构、动态规划、图论、数学、字符串、搜索、贪心、计算几何、位运算
+- edges：节点之间的关系边，包含 source、target、type（related/contains/prerequisite）
+- suggestions：一句话建议列表，针对薄弱知识点
+
+标签约束：节点的 id 和 label 必须来自统一标签字典：
+%s
+
+请严格按以下JSON格式返回（不要包含其他文本）：
 {
-  "summary": "对用户知识掌握情况的简要分析",
   "nodes": [
-    {"id": "标签名", "label": "标签名", "mastery": 0-100, "category": "分类"}
+    {"id": "哈希表", "label": "哈希表", "mastery": "proficient", "category": "基础算法"}
   ],
   "edges": [
-    {"source": "标签A", "target": "标签B", "type": "related/contains/prerequisite"}
+    {"source": "数组", "target": "哈希表", "type": "related"}
   ],
-  "suggestions": ["建议1", "建议2"]
-}`
+  "suggestions": ["建议内容"]
+}`, CandidateTagDict)
 
 	resp, err := h.ai.Chat([]ai.Message{
 		{Role: "system", Content: "你是一个算法竞赛教练，擅长分析学生的知识掌握情况并生成知识图谱。请始终以JSON格式回复。"},
@@ -620,6 +628,90 @@ func (h *Handler) KnowledgeGraph(c *gin.Context) {
 		"edges":       []gin.H{},
 		"rawMarkdown": resp,
 		"provider":    "agent-service",
+	}})
+}
+
+// CreateStudyPlanPayload is the payload for AI 题单创建
+type CreateStudyPlanPayload struct {
+	UserID     uint64              `json:"userId"`
+	Problems   []ProblemData       `json:"problems"`
+	TagStats   map[string]TagStatsData `json:"tagStats"`
+	Candidates map[string][]ProblemData `json:"candidates"`
+}
+
+// CreateStudyPlan generates a study plan based on user's weak areas
+func (h *Handler) CreateStudyPlan(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "failed to read body"})
+		return
+	}
+	var envelope PipelineEnvelope
+	var req CreateStudyPlanPayload
+	if json.Unmarshal(body, &envelope); err == nil && envelope.Task != "" {
+		json.Unmarshal(envelope.Payload, &req)
+	} else {
+		json.Unmarshal(body, &req)
+	}
+
+	// Build prompt: analyze user's weak areas and select appropriate problems
+	prompt := "根据用户的做题记录和薄弱知识点，创建一个针对性的学习题单。\n\n"
+	if len(req.Problems) > 0 {
+		prompt += "用户做过的题目：\n"
+		for _, p := range req.Problems {
+			prompt += fmt.Sprintf("- %s (标签: %s, 状态: %s)\n", p.Title, strings.Join(p.Tags, ", "), p.Status)
+		}
+	}
+	if len(req.TagStats) > 0 {
+		prompt += "\n知识点掌握情况：\n"
+		for tag, stats := range req.TagStats {
+			prompt += fmt.Sprintf("- %s: 通过率 %.1f%%, 解决 %d/%d 题\n", tag, stats.ACRate, stats.Solved, stats.Attempted)
+		}
+	}
+	if len(req.Candidates) > 0 {
+		prompt += "\n可选的推荐题目（按知识点分组）：\n"
+		for tag, probs := range req.Candidates {
+			prompt += fmt.Sprintf("\n【%s】:\n", tag)
+			for _, p := range probs {
+				prompt += fmt.Sprintf("  - #%d %s\n", p.ID, p.Title)
+			}
+		}
+	}
+
+	prompt += fmt.Sprintf(`
+输出要求：
+- title: 题单标题（简洁有吸引力）
+- description: 题单描述（说明学习目标和涵盖的知识点）
+- problemIDs: 从候选题目中选取的题目ID列表（按难度递进排列，5~15道）
+
+请严格按以下JSON格式返回（不要包含其他文本）：
+{
+  "title": "题单标题",
+  "description": "题单描述",
+  "problemIDs": [1001, 1003, 1005]
+}`)
+
+	resp, err := h.ai.Chat([]ai.Message{
+		{Role: "system", Content: "你是一个算法竞赛教练，擅长根据学生的学习情况制定个性化题单。请始终以JSON格式回复。分析学生的薄弱知识点，从候选题目中选择合适的题目组成题单。题目按难度递进排列，题单应覆盖2~4个薄弱知识点，包含5~15道题。"},
+		{Role: "user", Content: prompt},
+	})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": -1, "data": gin.H{
+			"title": "默认题单", "description": "AI服务不可用", "problemIDs": []uint64{}, "rawMarkdown": "", "provider": "unavailable",
+		}})
+		return
+	}
+
+	var structured map[string]interface{}
+	if json.Unmarshal([]byte(resp), &structured) == nil {
+		structured["rawMarkdown"] = resp
+		structured["provider"] = "agent-service"
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": structured})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
+		"title": "AI 推荐题单", "description": resp, "problemIDs": []uint64{}, "rawMarkdown": resp, "provider": "agent-service",
 	}})
 }
 
@@ -666,16 +758,8 @@ func (h *Handler) handleSolve(c *gin.Context, req *SolvePayload) {
 		level = "hint"
 	}
 
-	systemPrompt := "你是一个算法竞赛教练。请始终以JSON格式回复，timeComplexity和spaceComplexity字段使用Markdown格式（如 **O(n)** ）。"
-	userPrompt := ""
-
 	// Build context
 	contextInfo := fmt.Sprintf("题目: %s\n题目描述: %s", req.ProblemTitle, req.ProblemDesc)
-
-	// Add algorithm tags if available
-	if len(req.AlgorithmTags) > 0 {
-		contextInfo += fmt.Sprintf("\n\n算法标签: %s", strings.Join(req.AlgorithmTags, ", "))
-	}
 
 	// Add samples if available
 	if len(req.Samples) > 0 {
@@ -697,27 +781,43 @@ func (h *Handler) handleSolve(c *gin.Context, req *SolvePayload) {
 
 	// Add judge error if available (for retry)
 	if req.JudgeError != "" {
-		contextInfo += fmt.Sprintf("\n\n之前的判题结果: %s\n请修正代码使其通过判题。", req.JudgeError)
+		contextInfo += fmt.Sprintf("\n\n之前的判题结果: %s", req.JudgeError)
 	}
+
+	// Level-specific system and user prompts
+	var systemPrompt, userPrompt string
 
 	switch level {
 	case "hint":
-		if req.EditorCode == "" {
-			userPrompt = contextInfo + "\n\n用户还没有编写代码。请仅根据题目信息给出提示，帮助用户理解需要用到的算法知识点。"
-		} else {
-			userPrompt = contextInfo + "\n\n请根据用户的代码给出提示，帮助用户发现问题并改进。"
+		systemPrompt = "你是一个善于启发式教学的算法教练。用旁敲侧击的方式引导学生思考，不要直接给出答案或代码。一句话点到即止。请始终以JSON格式回复。"
+		if len(req.AlgorithmTags) > 0 {
+			contextInfo += fmt.Sprintf("\n\n算法标签: %s", strings.Join(req.AlgorithmTags, ", "))
 		}
-		userPrompt += "\n\n请严格按以下JSON格式返回：\n{\"answer\": \"提示内容（不超过3句话）\", \"hints\": [\"提示1\", \"提示2\"], \"relatedTopics\": [\"相关知识点\"]}"
+		userPrompt = contextInfo + "\n\n请用旁敲侧击的方式给出一句话提示，不要直接指出问题所在，而是引导用户自己发现关键点。如果用户没有代码，提示相关的算法方向即可。"
+		userPrompt += "\n\n请严格按以下JSON格式返回（不要包含其他文本）：\n{\"answer\": \"一句话启发式提示\"}"
+
 	case "explain":
-		userPrompt = contextInfo + fmt.Sprintf("\n\n用户的问题: %s\n请严格按以下JSON格式返回：\n{\"answer\": \"解题思路解释，用Markdown格式\", \"hints\": [\"关键步骤1\", \"关键步骤2\"], \"relatedTopics\": [\"相关算法\"], \"timeComplexity\": \"**O(?)** — 说明\", \"spaceComplexity\": \"**O(?)** — 说明\"}", req.Question)
+		systemPrompt = "你是一个算法竞赛教练。请分析用户代码，直接指出最大的一个问题所在，可以引用具体代码位置，但不要给出解决方案，让用户自己思考。回答简洁。请始终以JSON格式回复。"
+		userPrompt = contextInfo + "\n\n请分析用户当前代码，直接指出最大的一个问题所在（可以引用具体代码位置），但不要给出解决方案，让用户自己思考如何修改。回答简洁。"
+		userPrompt += "\n\n请严格按以下JSON格式返回（不要包含其他文本）：\n{\"answer\": \"当前代码最大的问题（Markdown）\"}"
+
 	case "full":
-		if req.JudgeError != "" {
-			userPrompt = contextInfo + "\n\n请修正代码使其通过判题。请严格按以下JSON格式返回（代码放在answer字段中，用Markdown代码块格式）：\n{\"answer\": \"修正后的代码和解释\", \"code\": \"修正后的完整代码\", \"language\": \"cpp\", \"hints\": [\"关键点1\"], \"relatedTopics\": [\"算法标签\"], \"timeComplexity\": \"**O(?)** — 说明\", \"spaceComplexity\": \"**O(?)** — 说明\"}"
-		} else {
-			userPrompt = contextInfo + fmt.Sprintf("\n\n用户的问题: %s\n请严格按以下JSON格式返回（代码放在answer字段中，用Markdown代码块格式，并在code字段中单独返回纯代码）：\n{\"answer\": \"完整解题思路和参考代码\", \"code\": \"完整可运行的代码\", \"language\": \"cpp\", \"hints\": [\"关键点1\"], \"relatedTopics\": [\"算法标签\"], \"timeComplexity\": \"**O(?)** — 说明\", \"spaceComplexity\": \"**O(?)** — 说明\"}", req.Question)
+		systemPrompt = "你是一个算法竞赛教练和程序员。请根据题目要求生成完整可运行的代码。如果用户代码思路基本正确，尽量沿用用户的思路进行修正；如果用户思路有根本性错误，则生成其他正确的实现。回答简洁，代码完整。请始终以JSON格式回复。"
+		if len(req.AlgorithmTags) > 0 {
+			contextInfo += fmt.Sprintf("\n\n算法标签: %s", strings.Join(req.AlgorithmTags, ", "))
 		}
+		if req.JudgeError != "" {
+			userPrompt = contextInfo + "\n\n之前的判题结果: " + req.JudgeError + "\n请根据判题结果修正代码。"
+		} else {
+			userPrompt = contextInfo
+		}
+		userPrompt += "\n\n请生成完整的可运行代码来解决这道题目。要求：如果用户代码的思路基本正确，尽量沿着用户的思路进行修正和完善；如果用户思路有根本性错误，则生成其他正确的实现。"
+		userPrompt += "\n\n输出要求：\n- answer：简要说明解题思路\n- code：完整可运行的代码\n- language：编程语言\n- timeComplexity / spaceComplexity：纯大O表示法，用Markdown加粗，不要附加说明文字"
+		userPrompt += "\n\n请严格按以下JSON格式返回（不要包含其他文本）：\n{\"answer\": \"解题思路简述\", \"code\": \"完整代码\", \"language\": \"cpp\", \"timeComplexity\": \"**O(n)**\", \"spaceComplexity\": \"**O(1)**\"}"
+
 	default:
-		userPrompt = fmt.Sprintf("题目: %s\n%s", req.ProblemTitle, req.Question)
+		systemPrompt = "你是一个算法竞赛教练。请始终以JSON格式回复。"
+		userPrompt = contextInfo
 	}
 
 	t0 := time.Now()
@@ -729,7 +829,6 @@ func (h *Handler) handleSolve(c *gin.Context, req *SolvePayload) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": -1, "data": gin.H{
 			"answer":   "AI 服务暂时不可用，请稍后重试。",
-			"hints":    []string{},
 			"provider": "unavailable",
 		}})
 		return
@@ -737,61 +836,7 @@ func (h *Handler) handleSolve(c *gin.Context, req *SolvePayload) {
 
 	// Try to parse structured JSON response
 	var structured map[string]interface{}
-	isStructured := json.Unmarshal([]byte(resp), &structured) == nil
-
-	// Extract code from structured response if available
-	if isStructured && level == "full" {
-		if codeField, ok := structured["code"].(string); ok && codeField != "" {
-			structured["code"] = codeField
-			structured["language"] = "cpp"
-		}
-	}
-
-	// If level is "full" and we have a problem ID, try to verify the generated code
-	if level == "full" && req.ProblemID > 0 {
-		code := ""
-		if isStructured {
-			if codeField, ok := structured["code"].(string); ok {
-				code = codeField
-			}
-		}
-		if code == "" {
-			code = extractCodeBlock(resp, "cpp")
-		}
-		if code == "" {
-			code = extractCodeBlock(resp, "c++")
-		}
-		if code != "" {
-			result, err := h.judge.Submit(req.ProblemID, "cpp", code)
-			if err == nil && result > 0 {
-				// Poll for result up to 10 times (500ms interval, 5s total)
-				var subResult *judge.SubmissionResult
-				for i := 0; i < 10; i++ {
-					time.Sleep(500 * time.Millisecond)
-					subResult, err = h.judge.GetResult(result)
-					if err != nil {
-						break
-					}
-					if subResult.Status != "Pending" && subResult.Status != "Queueing" && subResult.Status != "Compiling" {
-						break
-					}
-				}
-				if err == nil && subResult != nil {
-					verifyMsg := fmt.Sprintf("代码已自动提交验证：%s", subResult.Status)
-					if subResult.Status != "Accepted" && subResult.ErrorMsg != "" {
-						verifyMsg += fmt.Sprintf("，错误信息: %s", subResult.ErrorMsg)
-					}
-					if isStructured {
-						structured["verifyResult"] = verifyMsg
-					} else {
-						resp += fmt.Sprintf("\n\n---\n### 🤖 AI 自检结果\n\n%s", verifyMsg)
-					}
-				}
-			}
-		}
-	}
-
-	if isStructured {
+	if json.Unmarshal([]byte(resp), &structured) == nil {
 		structured["rawMarkdown"] = resp
 		structured["provider"] = "agent-service"
 		c.JSON(http.StatusOK, gin.H{"code": 0, "data": structured})
@@ -800,7 +845,6 @@ func (h *Handler) handleSolve(c *gin.Context, req *SolvePayload) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
 		"answer":      resp,
-		"hints":       []string{},
 		"rawMarkdown": resp,
 		"provider":    "agent-service",
 	}})
@@ -886,21 +930,18 @@ func (h *Handler) Chat(c *gin.Context) {
 	}
 
 	// Build system message with RAG context if available
-	systemContent := "你是一个算法竞赛AI助手，擅长算法、数据结构、编程竞赛相关问题。请用中文回答。"
+	systemContent := "你是一个算法竞赛AI助手，擅长算法、数据结构、编程竞赛相关问题。请用中文回答，回答简洁准确。"
 
-	// Add RAG context if available
+	// Add RAG context using algorithm tags (not user message)
 	if h.rag != nil && h.rag.IsInitialized() {
-		lastMsg := ""
-		for i := len(req.Messages) - 1; i >= 0; i-- {
-			if req.Messages[i].Role == "user" {
-				lastMsg = req.Messages[i].Content
-				break
-			}
+		ragQuery := ""
+		if len(req.Tags) > 0 {
+			ragQuery = strings.Join(req.Tags, " ")
 		}
-		if lastMsg != "" {
-			ragContext := h.rag.BuildContext(lastMsg, 2000)
+		if ragQuery != "" {
+			ragContext := h.rag.BuildContext(ragQuery, 2000)
 			if ragContext != "" {
-				systemContent += "\n\n" + ragContext
+				systemContent += "\n\n相关知识（从 OI-Wiki 检索）：\n---\n" + ragContext + "\n---"
 			}
 		}
 	}
@@ -962,8 +1003,23 @@ func (h *Handler) chatPayloadToRequest(payload *ChatPayload) ChatRequest {
 		}
 	}
 
+	// Add code context if available
+	if payload.Code != "" {
+		lang := payload.CodeLanguage
+		if lang == "" {
+			lang = "代码"
+		}
+		contextParts = append(contextParts, fmt.Sprintf("用户当前代码（%s）：\n%s", lang, payload.Code))
+	}
+
+	var tags []string
+	if payload.Problem != nil {
+		tags = payload.Problem.Tags
+	}
+
 	return ChatRequest{
 		Messages: messages,
 		Context:  strings.Join(contextParts, "\n\n"),
+		Tags:     tags,
 	}
 }

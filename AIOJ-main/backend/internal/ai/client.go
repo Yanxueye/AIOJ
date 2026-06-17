@@ -68,12 +68,20 @@ type ChatRequest struct {
 	Message        string          `json:"message"`
 	History        []Message       `json:"history"`
 	Problem        *ProblemContext `json:"problem,omitempty"`
+	CodeLanguage   string          `json:"codeLanguage,omitempty"`
+	Code           string          `json:"code,omitempty"`
 }
 
 type ChatResponse struct {
 	Reply    string         `json:"reply"`
 	Provider string         `json:"provider,omitempty"`
 	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+type FailedCase struct {
+	Input    string `json:"input"`
+	Expected string `json:"expected"`
+	Actual   string `json:"actual"`
 }
 
 type CodeDiagnosisRequest struct {
@@ -87,6 +95,7 @@ type CodeDiagnosisRequest struct {
 	RuntimeMs    int                 `json:"runtimeMs,omitempty"`
 	MemoryKb     int                 `json:"memoryKb,omitempty"`
 	RecentSubs   []SubmissionDigest  `json:"recentSubmissions,omitempty"`
+	FailedCase   *FailedCase         `json:"failedCase,omitempty"`
 }
 
 type CodeIssue struct {
@@ -97,12 +106,15 @@ type CodeIssue struct {
 }
 
 type CodeDiagnosisResponse struct {
-	Summary     string      `json:"summary"`
-	Issues      []CodeIssue `json:"issues"`
-	Suggestions []string    `json:"suggestions"`
-	FixedCode   string      `json:"fixedCode,omitempty"`
-	RawMarkdown string      `json:"rawMarkdown"`
-	Provider    string      `json:"provider,omitempty"`
+	Summary         string      `json:"summary"`
+	Issues          []CodeIssue `json:"issues"`
+	Suggestions     []string    `json:"suggestions"`
+	FixedCode       string      `json:"fixedCode,omitempty"`
+	TimeComplexity  string      `json:"timeComplexity,omitempty"`
+	SpaceComplexity string      `json:"spaceComplexity,omitempty"`
+	AlgorithmTags   []string    `json:"algorithmTags,omitempty"`
+	RawMarkdown     string      `json:"rawMarkdown"`
+	Provider        string      `json:"provider,omitempty"`
 }
 
 type KnowledgeGraphRequest struct {
@@ -129,11 +141,10 @@ type TagStat struct {
 }
 
 type GraphNode struct {
-	ID       string         `json:"id"`
-	Label    string         `json:"label"`
-	Type     string         `json:"type"`
-	Weight   int            `json:"weight,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Mastery  string `json:"mastery"`
+	Category string `json:"category,omitempty"`
 }
 
 type GraphEdge struct {
@@ -144,9 +155,9 @@ type GraphEdge struct {
 }
 
 type KnowledgeGraphResponse struct {
-	Summary     string      `json:"summary"`
 	Nodes       []GraphNode `json:"nodes"`
 	Edges       []GraphEdge `json:"edges"`
+	Suggestions []string    `json:"suggestions,omitempty"`
 	RawMarkdown string      `json:"rawMarkdown"`
 	Provider    string      `json:"provider,omitempty"`
 }
@@ -162,11 +173,12 @@ type SolveRequest struct {
 }
 
 type SolveResponse struct {
-	Answer      string   `json:"answer"`
-	Hints       []string `json:"hints"`
-	Complexity  string   `json:"complexity,omitempty"`
-	Code        string   `json:"code,omitempty"`
-	Language    string   `json:"language,omitempty"`
+	Answer         string   `json:"answer"`
+	Code           string   `json:"code,omitempty"`
+	Language       string   `json:"language,omitempty"`
+	TimeComplexity string   `json:"timeComplexity,omitempty"`
+	SpaceComplexity string  `json:"spaceComplexity,omitempty"`
+	AlgorithmTags  []string `json:"algorithmTags,omitempty"`
 	VerifyResult string  `json:"verifyResult,omitempty"`
 	Provider    string   `json:"provider,omitempty"`
 }
@@ -231,6 +243,31 @@ func (c *Client) BuildKnowledgeGraph(ctx context.Context, req KnowledgeGraphRequ
 	return &resp, nil
 }
 
+type CreateStudyPlanRequest struct {
+	UserID       uint64             `json:"userId"`
+	Problems     []ProblemSummary   `json:"problems"`
+	TagStats     map[string]TagStat `json:"tagStats"`
+	// Candidate problems grouped by tag (unified from AIOJ backend)
+	Candidates   map[string][]ProblemSummary `json:"candidates"`
+}
+
+type CreateStudyPlanResponse struct {
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	ProblemIDs  []uint64 `json:"problemIDs"`
+	RawMarkdown string   `json:"rawMarkdown"`
+	Provider    string   `json:"provider,omitempty"`
+}
+
+func (c *Client) CreateStudyPlan(ctx context.Context, req CreateStudyPlanRequest) (*CreateStudyPlanResponse, error) {
+	var resp CreateStudyPlanResponse
+	if err := c.post(ctx, "create_study_plan", "/create-study-plan", req, &resp); err != nil {
+		return nil, err
+	}
+	withProvider(&resp.Provider)
+	return &resp, nil
+}
+
 func (c *Client) Solve(ctx context.Context, req SolveRequest) (*SolveResponse, error) {
 	var resp SolveResponse
 	if err := c.post(ctx, "solve", "/solve", req, &resp); err != nil {
@@ -238,6 +275,34 @@ func (c *Client) Solve(ctx context.Context, req SolveRequest) (*SolveResponse, e
 	}
 	if strings.TrimSpace(resp.Answer) == "" {
 		return nil, errors.New("ai solve response missing answer")
+	}
+	withProvider(&resp.Provider)
+	return &resp, nil
+}
+
+type GenerateSolutionRequest struct {
+	UserID  uint64          `json:"userId"`
+	Problem *ProblemContext  `json:"problem,omitempty"`
+	Language string          `json:"language,omitempty"`
+	Code    string          `json:"code,omitempty"`
+}
+
+type GenerateSolutionResponse struct {
+	Title      string            `json:"title"`
+	Content    string            `json:"content"`
+	Tags       []string          `json:"algorithmTags,omitempty"`
+	Complexity map[string]string `json:"complexity,omitempty"`
+	RawMarkdown string           `json:"rawMarkdown"`
+	Provider   string            `json:"provider,omitempty"`
+}
+
+func (c *Client) GenerateSolution(ctx context.Context, req GenerateSolutionRequest) (*GenerateSolutionResponse, error) {
+	var resp GenerateSolutionResponse
+	if err := c.post(ctx, "generate_solution", "/generate-solution", req, &resp); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(resp.RawMarkdown) == "" {
+		resp.RawMarkdown = resp.Content
 	}
 	withProvider(&resp.Provider)
 	return &resp, nil
@@ -346,8 +411,8 @@ func diagnosisMarkdown(resp CodeDiagnosisResponse) string {
 func graphMarkdown(resp KnowledgeGraphResponse) string {
 	var b strings.Builder
 	b.WriteString("### 学习知识图谱\n\n")
-	if resp.Summary != "" {
-		b.WriteString(resp.Summary + "\n\n")
+	if len(resp.Suggestions) > 0 {
+		b.WriteString(strings.Join(resp.Suggestions, "；") + "\n\n")
 	}
 	b.WriteString(fmt.Sprintf("- 节点数：%d\n", len(resp.Nodes)))
 	b.WriteString(fmt.Sprintf("- 关系数：%d\n", len(resp.Edges)))
@@ -358,7 +423,7 @@ func graphMarkdown(resp KnowledgeGraphResponse) string {
 			limit = 8
 		}
 		for _, n := range resp.Nodes[:limit] {
-			b.WriteString(fmt.Sprintf("- `%s` %s（%s）\n", n.ID, n.Label, n.Type))
+			b.WriteString(fmt.Sprintf("- `%s` %s（%s）\n", n.ID, n.Label, n.Mastery))
 		}
 	}
 	return strings.TrimSpace(b.String())

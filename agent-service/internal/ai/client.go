@@ -18,19 +18,19 @@ type Client struct {
 }
 
 // NewClient creates a new AI client with primary (OpenAI-compatible) and fallback (Ollama)
-func NewClient(openaiKey, openaiBaseURL, openaiModel, ollamaURL, ollamaModel, provider, embeddingModel string) *Client {
+func NewClient(openaiKey, openaiBaseURL, openaiModel, ollamaURL, ollamaModel, provider, embeddingModel string, thinkingEnabled bool) *Client {
 	c := &Client{
 		provider: provider,
 	}
 
 	if openaiKey != "" {
-		c.primary = NewOpenAIClient(openaiBaseURL, openaiKey, openaiModel, embeddingModel)
-		log.Printf("[ai] primary: OpenAI-compatible (%s, model=%s, embedding=%s)", openaiBaseURL, openaiModel, embeddingModel)
+		c.primary = NewOpenAIClient(openaiBaseURL, openaiKey, openaiModel, embeddingModel, thinkingEnabled)
+		log.Printf("[ai] primary: OpenAI-compatible (%s, model=%s, embedding=%s, thinking=%v)", openaiBaseURL, openaiModel, embeddingModel, thinkingEnabled)
 	}
 
 	if ollamaURL != "" {
-		c.fallback = NewOllamaClient(ollamaURL, ollamaModel, embeddingModel)
-		log.Printf("[ai] fallback: Ollama (%s, model=%s, embedding=%s)", ollamaURL, ollamaModel, embeddingModel)
+		c.fallback = NewOllamaClient(ollamaURL, ollamaModel, embeddingModel, thinkingEnabled)
+		log.Printf("[ai] fallback: Ollama (%s, model=%s, embedding=%s, thinking=%v)", ollamaURL, ollamaModel, embeddingModel, thinkingEnabled)
 	}
 
 	return c
@@ -40,7 +40,6 @@ func NewClient(openaiKey, openaiBaseURL, openaiModel, ollamaURL, ollamaModel, pr
 func (c *Client) Chat(messages []Message) (string, error) {
 	switch c.provider {
 	case "ollama":
-		// Ollama-first: try Ollama, fall back to OpenAI-compatible
 		if c.fallback != nil {
 			resp, err := c.fallback.Chat(messages)
 			if err == nil {
@@ -52,31 +51,33 @@ func (c *Client) Chat(messages []Message) (string, error) {
 			return c.primary.Chat(messages)
 		}
 	case "openai":
-		// OpenAI-first: try OpenAI-compatible, fall back to Ollama
 		if c.primary != nil {
 			resp, err := c.primary.Chat(messages)
 			if err == nil {
 				return resp, nil
 			}
-			log.Printf("[ai] primary API failed: %v, falling back to Ollama", err)
+			log.Printf("[ai] primary API error: %v", err)
+		} else {
+			log.Printf("[ai] primary (OpenAI) is nil — API key missing or empty?")
 		}
 		if c.fallback != nil {
-			return c.fallback.Chat(messages)
+			resp, err := c.fallback.Chat(messages)
+			if err == nil { return resp, nil }
+			log.Printf("[ai] fallback Ollama also failed: %v", err)
 		}
 	default:
-		// No preference: try whatever is available
 		if c.primary != nil {
 			resp, err := c.primary.Chat(messages)
-			if err == nil {
-				return resp, nil
-			}
-			log.Printf("[ai] primary API failed: %v, trying fallback", err)
+			if err == nil { return resp, nil }
+			log.Printf("[ai] primary API error: %v", err)
 		}
 		if c.fallback != nil {
-			return c.fallback.Chat(messages)
+			resp, err := c.fallback.Chat(messages)
+			if err == nil { return resp, nil }
+			log.Printf("[ai] fallback also failed: %v", err)
 		}
 	}
-
+	log.Printf("[ai] Chat failed — no provider available (primary=%v, fallback=%v)", c.primary != nil, c.fallback != nil)
 	return "", ErrNoProvider
 }
 

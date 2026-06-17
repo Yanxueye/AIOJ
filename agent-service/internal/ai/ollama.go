@@ -14,10 +14,11 @@ var ErrNoProvider = errors.New("no AI provider configured")
 
 // OllamaClient is a client for the local Ollama API
 type OllamaClient struct {
-	baseURL       string
-	model         string
-	embeddingModel string // separate model for embeddings
-	httpClient    *http.Client
+	baseURL         string
+	model           string
+	embeddingModel  string // separate model for embeddings
+	thinkingEnabled bool
+	httpClient      *http.Client
 }
 
 type ollamaChatRequest struct {
@@ -45,16 +46,17 @@ type ollamaEmbeddingResponse struct {
 	Embedding []float64 `json:"embedding"`
 }
 
-func NewOllamaClient(baseURL, model, embeddingModel string) *OllamaClient {
+func NewOllamaClient(baseURL, model, embeddingModel string, thinkingEnabled bool) *OllamaClient {
 	if embeddingModel == "" {
 		embeddingModel = model
 	}
 	return &OllamaClient{
-		baseURL:        baseURL,
-		model:          model,
-		embeddingModel: embeddingModel,
+		baseURL:         baseURL,
+		model:           model,
+		embeddingModel:  embeddingModel,
+		thinkingEnabled: thinkingEnabled,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 180 * time.Second,
 		},
 	}
 }
@@ -63,7 +65,12 @@ func NewOllamaClient(baseURL, model, embeddingModel string) *OllamaClient {
 func (c *OllamaClient) Chat(messages []Message) (string, error) {
 	msgs := make([]ollamaMessage, len(messages))
 	for i, m := range messages {
-		msgs[i] = ollamaMessage{Role: m.Role, Content: m.Content}
+		content := m.Content
+		// Prepend /no_think to system message to disable thinking mode for speed
+		if !c.thinkingEnabled && i == 0 && m.Role == "system" {
+			content = "/no_think\n" + content
+		}
+		msgs[i] = ollamaMessage{Role: m.Role, Content: content}
 	}
 
 	req := ollamaChatRequest{

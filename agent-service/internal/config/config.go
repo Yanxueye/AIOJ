@@ -22,8 +22,8 @@ type Config struct {
 	// Embedding model (separate from chat model)
 	EmbeddingModel string // e.g., "nomic-embed-text:latest"
 
-	// Judge service (HTTP, not gRPC)
-	AIOJBackendURL string
+	// Thinking mode (set to "true" to enable LLM thinking/reasoning, default false for speed)
+	AIThinking bool
 }
 
 func Load() Config {
@@ -35,12 +35,12 @@ func Load() Config {
 		HTTPAddr:       getEnv("AGENT_HTTP_ADDR", ":8090"),
 		AIProvider:     getEnv("AI_PROVIDER", "openai"),
 		OpenAIAPIKey:   getEnv("OPENAI_API_KEY", ""),
-		OpenAIBaseURL:  getEnv("OPENAI_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"),
-		OpenAIModel:    getEnv("OPENAI_MODEL", "mimo-v2.5-pro"),
+		OpenAIBaseURL:  getEnv("OPENAI_BASE_URL", "https://api.deepseek.com/v1"),
+		OpenAIModel:    getEnv("OPENAI_MODEL", "deepseek-chat"),
 		OllamaURL:      getEnv("OLLAMA_URL", "http://127.0.0.1:11434"),
 		OllamaModel:    getEnv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
 		EmbeddingModel: getEnv("EMBEDDING_MODEL", "nomic-embed-text:latest"),
-		AIOJBackendURL: getEnv("AIOJ_BACKEND_URL", "http://127.0.0.1:8080"),
+		AIThinking:     strings.EqualFold(getEnv("AI_THINKING", "false"), "true"),
 	}
 }
 

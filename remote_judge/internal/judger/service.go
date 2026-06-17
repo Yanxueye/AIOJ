@@ -246,9 +246,6 @@ func (s *Service) compareCase(res sandbox.ExecResult, expected string, req domai
 	if res.ExitCode != 0 {
 		return domain.StatusRuntimeError
 	}
-	if req.RunMode == "run" {
-		return domain.StatusAccepted
-	}
 	if !compareOutput(res.Stdout, expected) {
 		return domain.StatusWrongAnswer
 	}

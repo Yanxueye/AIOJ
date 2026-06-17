@@ -4,16 +4,28 @@ import "time"
 
 type StudyPlan struct {
 	ID          uint64          `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID      uint64          `gorm:"index;not null;default:0" json:"userId"`
 	Title       string          `gorm:"type:varchar(128);index" json:"title"`
 	Description string          `gorm:"type:text" json:"description"`
 	Difficulty  string          `gorm:"type:varchar(16);index" json:"difficulty"`
 	Tags        StringSlice     `gorm:"type:json" json:"tags"`
+	IsPublic    bool            `gorm:"default:true" json:"isPublic"`
 	CreatedAt   time.Time       `json:"createdAt"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
 	Items       []StudyPlanItem `gorm:"foreignKey:PlanID" json:"items,omitempty"`
 }
 
 func (StudyPlan) TableName() string { return "study_plans" }
+
+// StudyPlanFavorite tracks user favorites of plans.
+type StudyPlanFavorite struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID    uint64    `gorm:"uniqueIndex:idx_user_plan_fav;not null" json:"userId"`
+	PlanID    uint64    `gorm:"uniqueIndex:idx_user_plan_fav;not null" json:"planId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (StudyPlanFavorite) TableName() string { return "study_plan_favorites" }
 
 type StudyPlanItem struct {
 	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`

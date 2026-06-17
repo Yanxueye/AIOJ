@@ -12,7 +12,6 @@ import (
 	"agent-service/internal/ai"
 	"agent-service/internal/config"
 	"agent-service/internal/handler"
-	"agent-service/internal/judge"
 	"agent-service/internal/rag"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +19,8 @@ import (
 
 func main() {
 	cfg := config.Load()
+	log.Printf("[config] provider=%s model=%s baseURL=%s keyLen=%d",
+		cfg.AIProvider, cfg.OpenAIModel, cfg.OpenAIBaseURL, len(cfg.OpenAIAPIKey))
 
 	aiClient := ai.NewClient(
 		cfg.OpenAIAPIKey,
@@ -29,9 +30,8 @@ func main() {
 		cfg.OllamaModel,
 		cfg.AIProvider,
 		cfg.EmbeddingModel,
+		cfg.AIThinking,
 	)
-	judgeClient := judge.NewClient(cfg.AIOJBackendURL)
-
 	// Initialize RAG service using langchaingo
 	ragService := rag.NewService()
 
@@ -50,7 +50,7 @@ func main() {
 		}
 	}()
 
-	h := handler.New(aiClient, judgeClient, ragService)
+	h := handler.New(aiClient, ragService)
 
 	r := gin.Default()
 
@@ -84,14 +84,13 @@ func main() {
 				"documentCount": ragService.DocumentCount(),
 			})
 		})
-		api.POST("/hint", h.Hint)
-		api.POST("/analyze", h.Analyze)
 		api.POST("/generate-solution", h.GenerateSolution)
 		api.POST("/chat", h.Chat)
 		// Routes matching AIOJ backend AI client expectations
 		api.POST("/code-diagnosis", h.CodeDiagnosis)
 		api.POST("/knowledge-graph", h.KnowledgeGraph)
 		api.POST("/solve", h.Solve)
+			api.POST("/create-study-plan", h.CreateStudyPlan)
 	}
 
 	// Graceful shutdown

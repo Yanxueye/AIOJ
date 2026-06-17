@@ -59,30 +59,35 @@ async function generateAISolution() {
   }
   aiLoading.value = true
   try {
-    // Fetch problem info
+    // Fetch problem info for title
     const problemRes = await problemApi.getDetail(form.problemId)
     const problem = problemRes.data
-    // Fetch user's submissions for this problem
-    let attempts = []
+
+    // Get user's latest AC code for this problem
+    let code = '', language = form.language
     try {
       const { submissionApi } = await import('@/api/submission')
-      const subRes = await submissionApi.getList({ problemId: form.problemId, pageSize: 10 })
-      attempts = (subRes.data?.list || []).map(s => ({
-        status: s.status,
-        language: s.language,
-        message: s.errorMessage || s.compileOutput || ''
-      }))
+      const subRes = await submissionApi.getList({ problemId: form.problemId, status: 'Accepted', pageSize: 1 })
+      const ac = subRes.data?.list?.[0]
+      if (ac) {
+        const detail = await submissionApi.getDetail(ac.id)
+        code = detail.data?.code || ''
+        language = detail.data?.language || language
+      }
     } catch { /* ignore */ }
 
-    const res = await aiApi.solveProblem({
+    const res = await aiApi.generateSolution({
       problemId: form.problemId,
-      question: `请帮我生成一篇题解，包含：1) 解题思路概述 2) 踩坑点 3) 实现亮点 4) 关键公式/算法 5) 时间/空间复杂度。用Markdown格式输出。`,
-      level: 'full'
+      language,
+      code
     })
-    const answer = res.data?.answer || ''
-    if (answer) {
-      form.content = answer
-      if (!form.title) {
+    const data = res.data
+    const content = data?.content || data?.rawMarkdown || ''
+    if (content) {
+      form.content = content
+      if (!form.title && data?.title) {
+        form.title = data.title
+      } else if (!form.title) {
         form.title = `${problem.title || '题解'} - AI 辅助生成`
       }
       ElMessage.success('AI 题解已生成，请检查并修改后保存')

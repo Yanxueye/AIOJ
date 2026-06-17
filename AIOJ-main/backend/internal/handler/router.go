@@ -65,6 +65,11 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		authed.GET("/learning-path", recommendation.LearningPath)
 		authed.GET("/weakness-analysis", recommendation.WeaknessAnalysis)
 		authed.GET("/study-plans/checkins", studyPlan.Checkins)
+		authed.POST("/study-plans", studyPlan.Create)
+		authed.PUT("/study-plans/:id", studyPlan.Update)
+		authed.DELETE("/study-plans/:id", studyPlan.Delete)
+		authed.POST("/study-plans/:id/favorite", studyPlan.Favorite)
+		authed.POST("/knowledge/problems-by-tags", knowledge.ProblemsByTags)
 		authed.GET("/admin/users", middleware.RequireAdminDB(db), user.AdminList)
 		authed.PUT("/admin/users/:id/role", middleware.RequireAdminDB(db), user.AdminUpdateRole)
 		authed.GET("/admin/audit-logs", middleware.RequireAdminDB(db), audit.List)
@@ -102,8 +107,11 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		authed.POST("/ai/chat", aiRateLimit, ai.Chat)
 		authed.GET("/ai/history", ai.History)
 		authed.GET("/ai/conversations/:id/messages", ai.Messages)
+		authed.DELETE("/ai/conversations/:id", ai.DeleteConversation)
 		authed.POST("/ai/code-diagnosis", aiRateLimit, ai.CodeDiagnosis)
+		authed.POST("/ai/generate-solution", aiRateLimit, ai.GenerateSolution)
 		authed.POST("/ai/knowledge-graph", aiRateLimit, ai.KnowledgeGraph)
+		authed.POST("/ai/create-study-plan", aiRateLimit, ai.CreateStudyPlan)
 		authed.POST("/ai/solve", aiRateLimit, ai.Solve)
 	}
 	return r

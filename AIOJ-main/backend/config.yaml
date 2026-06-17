@@ -34,5 +34,5 @@ ai:
   enabled: true
   endpoint: "http://127.0.0.1:8090/api/agent"
   api_key: ""
-  model: "mimo-v2.5-pro"
-  timeout_seconds: 120
+  model: "deepseek-chat"
+  timeout_seconds: 180

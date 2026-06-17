@@ -286,7 +286,8 @@ body {
   background: #f5f3ee;
   background-image:
     radial-gradient(circle at 20% 50%, rgba(82,196,26,0.03) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(232,168,56,0.02) 0%, transparent 50%);
+    radial-gradient(circle at 80% 20%, rgba(232,168,56,0.02) 0%, transparent 50%),
+    repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.003) 2px, rgba(0,0,0,0.003) 4px);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.6;
@@ -294,6 +295,13 @@ body {
   overflow-x: hidden;
   min-height: 100vh;
 }
+
+/* subtle grain overlay */
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  opacity: 0.015; background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] body::after { opacity: 0.025 }
 
 a {
   text-decoration: none;
@@ -327,7 +335,12 @@ code, pre { font-family: var(--font-mono); }
 }
 
 .card:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 6px 20px rgba(36,32,26,0.10), 0 0 0 1px var(--accent-gold, #d4a01720);
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 0 0 1px rgba(240,192,96,0.1);
 }
 
 .card-title {

@@ -30,6 +30,8 @@ type chatReq struct {
 	History        []aisvc.Message `json:"history"`
 	ProblemID      *uint64         `json:"problem_id"`
 	ConversationID string          `json:"conversation_id"`
+	CodeLanguage   string          `json:"code_language,omitempty"`
+	Code           string          `json:"code,omitempty"`
 }
 
 type codeDiagnosisReq struct {
@@ -91,6 +93,8 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		Message:        req.Message,
 		History:        sanitizeHistory(req.History),
 		Problem:        problemCtx,
+		CodeLanguage:   strings.TrimSpace(req.CodeLanguage),
+		Code:           strings.TrimSpace(req.Code),
 	})
 	if err != nil {
 		utils.Server(c, err.Error())
@@ -181,6 +185,18 @@ func (h *AIHandler) Messages(c *gin.Context) {
 	})
 }
 
+func (h *AIHandler) DeleteConversation(c *gin.Context) {
+	uid, _ := middleware.CurrentUserID(c)
+	convID := c.Param("id")
+	if convID == "" {
+		utils.BadRequest(c, "会话 ID 不能为空")
+		return
+	}
+	h.DB.Where("conversation_id = ?", convID).Delete(&models.Message{})
+	h.DB.Where("id = ? AND user_id = ?", convID, uid).Delete(&models.Conversation{})
+	utils.OK(c, nil)
+}
+
 func (h *AIHandler) CodeDiagnosis(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
 	var req codeDiagnosisReq
@@ -230,8 +246,14 @@ func (h *AIHandler) CodeDiagnosis(c *gin.Context) {
 		return
 	}
 
-	// Get recent submissions for this problem (sliding window of 3)
-	recentSubs, _ := h.recentSubmissions(uid, &req.ProblemID, 3)
+	// Get the most recent submission for this problem
+	recentSubs, _ := h.recentSubmissions(uid, &req.ProblemID, 1)
+
+	// Look up the first failing test case for non-AC submissions
+	var failedCase *aisvc.FailedCase
+	if req.SubmissionID > 0 && req.JudgeStatus != "Accepted" {
+		failedCase = h.findFailedCase(req.SubmissionID, req.ProblemID, uid)
+	}
 
 	resp, err := h.aiClient().DiagnoseCode(c.Request.Context(), aisvc.CodeDiagnosisRequest{
 		UserID:       uid,
@@ -244,6 +266,56 @@ func (h *AIHandler) CodeDiagnosis(c *gin.Context) {
 		RuntimeMs:    req.RuntimeMs,
 		MemoryKb:     req.MemoryKb,
 		RecentSubs:   recentSubs,
+		FailedCase:   failedCase,
+	})
+	if err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+	utils.OK(c, resp)
+}
+
+type generateSolutionReq struct {
+	ProblemID uint64 `json:"problemId" binding:"required"`
+	Language  string `json:"language"`
+	Code      string `json:"code"`
+}
+
+func (h *AIHandler) GenerateSolution(c *gin.Context) {
+	uid, _ := middleware.CurrentUserID(c)
+	var req generateSolutionReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "请求参数不合法")
+		return
+	}
+
+	problemCtx, err := h.problemContext(&req.ProblemID)
+	if err != nil {
+		utils.BadRequest(c, "题目不存在")
+		return
+	}
+
+	// If no code provided, get the user's latest AC for this problem
+	code := strings.TrimSpace(req.Code)
+	language := strings.TrimSpace(req.Language)
+	if code == "" {
+		var sub models.Submission
+		if err := h.DB.Where("user_id = ? AND problem_id = ? AND status = ?", uid, req.ProblemID, models.StatusAccepted).
+			Order("id DESC").First(&sub).Error; err != nil {
+			utils.BadRequest(c, "未找到通过的提交记录")
+			return
+		}
+		code = sub.Code
+		if language == "" {
+			language = sub.Language
+		}
+	}
+
+	resp, err := h.aiClient().GenerateSolution(c.Request.Context(), aisvc.GenerateSolutionRequest{
+		UserID:  uid,
+		Problem: problemCtx,
+		Language: language,
+		Code:     code,
 	})
 	if err != nil {
 		utils.Server(c, err.Error())
@@ -299,14 +371,14 @@ func (h *AIHandler) KnowledgeGraph(c *gin.Context) {
 		Scope:   scope,
 		Nodes:   string(nodesJSON),
 		Edges:   string(edgesJSON),
-		Summary: resp.Summary,
+		Summary: strings.Join(resp.Suggestions, "；"),
 	}
 	// Upsert: update if exists for same scope, create if not
 	var existing models.UserKnowledgeGraph
 	if err := h.DB.Where("user_id = ? AND scope = ?", uid, scope).First(&existing).Error; err == nil {
 		existing.Nodes = string(nodesJSON)
 		existing.Edges = string(edgesJSON)
-		existing.Summary = resp.Summary
+		existing.Summary = strings.Join(resp.Suggestions, "；")
 		if saveErr := h.DB.Save(&existing).Error; saveErr != nil {
 			log.Printf("[ai] knowledge graph save failed: %v", saveErr)
 		}
@@ -317,6 +389,84 @@ func (h *AIHandler) KnowledgeGraph(c *gin.Context) {
 	}
 
 	utils.OK(c, resp)
+}
+
+func (h *AIHandler) CreateStudyPlan(c *gin.Context) {
+	uid, _ := middleware.CurrentUserID(c)
+	if uid == 0 {
+		utils.Unauthorized(c, "请先登录")
+		return
+	}
+	// 1. Gather user's submission data (same as KnowledgeGraph)
+	recent, err := h.recentSubmissions(uid, nil, 50)
+	if err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+	problems := h.aggregateProblems(recent)
+	tagStats := h.aggregateTagStats(recent)
+
+	// 2. Find weak tags and gather candidate problems for each
+	candidates := make(map[string][]aisvc.ProblemSummary)
+	for tag, stat := range tagStats {
+		if stat.ACRate < 50 || stat.Solved < 3 {
+			// Weak tag: find untried published problems with this tag
+			var tagProblems []models.Problem
+			h.DB.Where("status = ? AND JSON_CONTAINS(tags, ?)", models.ProblemStatusPublished,
+				fmt.Sprintf(`"%s"`, tag)).Find(&tagProblems)
+			triedSet := make(map[uint64]bool)
+			for _, p := range problems {
+				triedSet[p.ID] = true
+			}
+			for _, tp := range tagProblems {
+				if !triedSet[tp.ID] {
+					candidates[tag] = append(candidates[tag], aisvc.ProblemSummary{
+						ID:     tp.ID,
+						Title:  tp.Title,
+						Tags:   tp.Tags,
+						Status: "unattempted",
+					})
+				}
+			}
+		}
+	}
+
+	// 3. Call agent service to create study plan
+	resp, err := h.aiClient().CreateStudyPlan(c.Request.Context(), aisvc.CreateStudyPlanRequest{
+		UserID:     uid,
+		Problems:   problems,
+		TagStats:   tagStats,
+		Candidates: candidates,
+	})
+	if err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+
+	// 4. Validate problem IDs exist in DB
+	var count int64
+	h.DB.Model(&models.Problem{}).Where("id IN ?", resp.ProblemIDs).Count(&count)
+
+	// 5. Create the study plan
+	plan := models.StudyPlan{
+		UserID:      uid,
+		Title:       resp.Title,
+		Description: resp.Description,
+		Difficulty:  "中等",
+	}
+	if err := h.DB.Create(&plan).Error; err != nil {
+		utils.Server(c, err.Error())
+		return
+	}
+	for i, pid := range resp.ProblemIDs {
+		var p models.Problem
+		if h.DB.First(&p, pid).Error != nil { continue }
+		h.DB.Create(&models.StudyPlanItem{
+			PlanID: plan.ID, ProblemID: pid, OrderNo: i + 1,
+			Title: p.Title, Difficulty: p.Difficulty,
+		})
+	}
+	utils.OK(c, gin.H{"id": plan.ID, "title": plan.Title, "problemCount": len(resp.ProblemIDs)})
 }
 
 func (h *AIHandler) Solve(c *gin.Context) {
@@ -721,4 +871,52 @@ func (h *AIHandler) aggregateTagStats(subs []aisvc.SubmissionDigest) map[string]
 		}
 	}
 	return out
+}
+
+// findFailedCase looks up the first non-AC test case result for a submission.
+func (h *AIHandler) findFailedCase(submissionID, problemID, uid uint64) *aisvc.FailedCase {
+	// Get submission case results
+	var caseResults []models.SubmissionCaseResult
+	h.DB.Where("submission_id = ?", submissionID).Order("case_no ASC").Find(&caseResults)
+
+	// Find the first non-Accepted case
+	var failedCaseNo int
+	for _, cr := range caseResults {
+		if cr.Status != models.StatusAccepted {
+			failedCaseNo = cr.CaseNo
+			break
+		}
+	}
+	if failedCaseNo == 0 {
+		return nil
+	}
+
+	// Get the actual output from the case result
+	var actual string
+	for _, cr := range caseResults {
+		if cr.CaseNo == failedCaseNo {
+			actual = cr.StdoutPreview
+			break
+		}
+	}
+
+	// Look up the test case input/expected from the problem
+	var problem models.Problem
+	if err := h.DB.Preload("PublishedVersion").First(&problem, problemID).Error; err != nil {
+		return nil
+	}
+	if problem.PublishedVersion == nil {
+		return nil
+	}
+
+	var tc models.ProblemTestCase
+	if err := h.DB.Where("version_id = ? AND case_no = ?", problem.PublishedVersion.ID, failedCaseNo).First(&tc).Error; err != nil {
+		return nil
+	}
+
+	return &aisvc.FailedCase{
+		Input:    tc.Input,
+		Expected: tc.Expected,
+		Actual:   actual,
+	}
 }

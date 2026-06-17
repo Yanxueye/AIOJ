@@ -384,6 +384,17 @@ function statusClass(status) {
   color: var(--text-secondary);
 }
 
+/* Status indicators */
+.status-accepted { color: var(--accent-green); font-weight: 600; }
+.status-accepted::before { content: '●'; margin-right: 4px; }
+.status-wrong { color: var(--accent-red); font-weight: 600; }
+.status-ce { color: var(--accent-purple); font-weight: 600; }
+.status-tle { color: var(--accent-orange); font-weight: 600; }
+.status-mle { color: #c2410c; font-weight: 600; }
+.status-ole { color: #b45309; font-weight: 600; }
+.status-system { color: #7c3aed; font-weight: 600; }
+.status-pending { color: var(--text-muted); }
+
 @media (max-width: 960px) {
   .profile-layout {
     grid-template-columns: 1fr;

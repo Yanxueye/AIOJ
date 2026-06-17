@@ -1,6 +1,6 @@
 # Agent-Service 设计文档
 
-> 最后更新：2026-06-12
+> 最后更新：2026-06-17
 
 ---
 
@@ -17,8 +17,8 @@
                                   │ gRPC                         │ HTTP
                                   ↓                              ↓
                            ┌──────────────┐               ┌───────────────┐
-                           │ remote_judge  │               │  LLM Provider │
-                           │  (判题沙箱)   │               │  (MIMO/Ollama)│
+                           │ remote_judge │               │  DeepSeek V4  │
+                           │  (判题沙箱)   │               │  (OpenAI API) │
                            └──────────────┘               └───────────────┘
 ```
 
@@ -26,8 +26,9 @@
 
 - **用户不可感知**：agent-service 不直接暴露给前端，所有请求经 OJ 后端转发
 - **职责分离**：OJ 后端负责数据整理、上下文组装、持久化；agent-service 负责 AI 推理
-- **统一标签字典**：OJ 后端与 agent-service 共用同一套算法标签（AlgorithmTag），确保 AI 输出的标签与题库一致
+- **统一标签字典**：知识点（knowledge_points）为唯一源头 → 自动同步到 algorithm_tags 表 → 题目标签强制校验 → agent-service 使用同一套标签（CandidateTagDict）
 - **RAG 增强**：agent-service 内置 RAG 检索，自动注入相关知识到 AI prompt
+- **掌握度实时计算**：知识图谱节点颜色由 OJ 后端从用户提交记录实时计算，不依赖 AI 或中间表
 
 ---
 
@@ -35,25 +36,37 @@
 
 ### 2.1 设计
 
-OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，按分类分组：
+知识点表（`knowledge_points`）作为唯一数据源，包含 ~83 个知识点，按 11 个分类分组，通过 parentId 自引用形成树形层级：
 
-| 分类 | 示例标签 |
-|------|----------|
-| 基础算法 | 模拟、枚举、贪心、排序、二分、双指针、前缀和、位运算、哈希 |
-| 动态规划 | 背包、区间DP、树形DP、状压DP、数位DP、LIS、LCS |
-| 图论 | BFS、DFS、最短路径、最小生成树、拓扑排序、二分图、并查集 |
-| 数据结构 | 栈、队列、堆、链表、树、线段树、树状数组、字典树 |
-| 字符串 | KMP、字符串哈希、Manacher、后缀自动机、后缀数组 |
-| 数学 | 数论、质数、GCD/LCM、快速幂、组合数学、NTT、博弈论 |
-| 搜索 | 回溯、剪枝、迭代加深、A*、双向BFS |
-| 计算几何 | 凸包、半平面交、最近点对、旋转卡壳 |
+| 分类 | 知识点（叶子节点示例） |
+|------|----------------------|
+| 基础算法 | 枚举、模拟、排序、二分、双指针、前缀和、差分、分治、贪心、递归、离散化 |
+| 数据结构 | 数组、链表、栈、单调栈、队列、单调队列、堆、哈希表、并查集、字典树、线段树、树状数组、平衡树、分块 |
+| 动态规划 | 背包DP、区间DP、树形DP、数位DP、状态压缩DP、DP优化、计数DP、概率DP、博弈论DP |
+| 图论 | 最短路、最小生成树、网络流、二分图、拓扑排序、强连通分量、桥和割点、树上问题、LCA |
+| 数学 | 质数、GCD/LCM、快速幂、模运算、组合数学、容斥原理、概率期望、矩阵、高斯消元、莫比乌斯反演、博弈论 |
+| 字符串 | 字符串处理、KMP、Trie、后缀数组、后缀自动机、AC自动机、Manacher、哈希 |
+| 搜索 | BFS、DFS、迭代加深、IDA*、双向BFS、启发式搜索、折半搜索、回溯 |
+| 贪心 | 区间贪心、排序贪心、反悔贪心 |
+| 计算几何 | 向量、凸包、半平面交、最近点对、旋转卡壳 |
+| 位运算 | 位操作、状态压缩、集合运算 |
 
-### 2.2 共享方式
+每个分类有一个同名子节点承接题目映射（如"数据结构（分类）"下有叶子"数据结构"），避免非叶子节点被映射题目的情况。
 
-- OJ 后端提供 `GET /api/tags` 和 `GET /api/tags/names` API
-- agent-service 启动时从 OJ 后端拉取标签列表，缓存到内存
-- AI prompt 中注入标签列表，要求 AI 输出的算法标签必须来自该列表
-- 前端题目创建时使用下拉多选框选择标签
+### 2.2 同步链路
+
+```
+seed_knowledge.go (83个知识点)
+    → knowledge_points 表
+    → syncTagsFromKnowledgePoints() → algorithm_tags 表
+    → TagHandler.List/Names 提供前端标签选择器
+    → ProblemHandler.validateTags() 校验题目标签
+    → agent-service CandidateTagDict 硬编码常量
+```
+
+- agent-service 使用硬编码的 `CandidateTagDict` 常量（启动时无需联网拉取）
+- 前端题目创建/修改时标签必须来自 `algorithm_tags` 表
+- 知识图谱按 `problems.tags` 字段（JSON_CONTAINS）直接匹配知识点名称
 
 ---
 
@@ -61,76 +74,52 @@ OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，
 
 ### 3.1 数据来源
 
-| 来源 | 存储方式 | 更新频率 | 选取上限 |
+| 来源 | 存储方式 | 更新频率 | 选取数量 |
 |------|----------|----------|----------|
-| OI-Wiki 文档 | 本地 markdown 文件，langchaingo 加载分割 | 手动运行爬虫 | top-3 |
-| 高赞用户题解 | MySQL `problem_solutions` 表 | 实时 | top-2 |
+| OI-Wiki 文档 | 本地 markdown → langchaingo 分割 → 嵌入缓存 | 手动运行爬虫 | top-3 |
 
 ### 3.2 检索流程
 
 ```
-用户提问/代码 → 构建查询 → 检索 OI-Wiki (top-3) + 检索题解 (top-2) → 合并注入 prompt
+用户提问/代码 → 拼接题目标签为查询文本 → 检索 OI-Wiki (top-3) → 注入 System Prompt
 ```
-
-### 3.3 标签关联
-
-- OI-Wiki 文档的 metadata 中包含 `category` 字段，与标签字典的分类对齐
-- 检索时优先匹配与题目标签相同分类的知识
-- 题解检索时按题目标签筛选
 
 ---
 
 ## 四、AI 功能详细设计
 
-### 4.1 代码诊断（Code Diagnosis）
+### 4.1 代码分析（Code Diagnosis）
 
-**触发场景**：用户提交代码判题失败后，点击"获取诊断"
+**触发场景**：用户提交代码后（无论 AC 与否），点击"AI 分析"
 
 **数据流**：
 ```
-前端 → OJ 后端 → agent-service → LLM → agent-service → OJ 后端 → 前端
+前端 → OJ 后端（整理上下文） → agent-service → LLM → agent-service → OJ 后端 → 前端
 ```
 
-**OJ 后端组装的信息**：
+**OJ 后端传递的信息**：
+- 题目信息（标题、题面、题解、样例）
+- 用户代码（语言、内容）
+- 评测结果（状态、耗时、内存、错误信息）
+- 未通过测试点（仅非 AC 时）：输入、预期输出、实际输出
+- 最近提交记录（同题目的历史提交）
+- 候选算法标签字典（injected in prompt）
+
+**Prompt 区分**：
+- **Accepted**：分析代码质量、复杂度、优化空间，不质疑正确性
+- **非 Accepted**：分析错误原因、指出具体问题、给出修复建议
+
+**LLM 输出**：
 ```json
 {
-  "problemId": 1001,
-  "problemTitle": "两数之和",
-  "problemContent": "题面内容...",
-  "problemEditorial": "官方题解（如果有）...",
-  "samples": [{"input": "...", "expected": "..."}],
-  "algorithmTags": ["数组", "哈希表"],
-  "language": "cpp",
-  "code": "用户代码...",
-  "judgeStatus": "Wrong Answer",
-  "errorMessage": "期望输出 0 1，实际输出 1 2",
-  "recentSubmissions": [
-    {"status": "Wrong Answer", "language": "cpp", "code": "完整代码...", "errorMessage": "期望输出 0 1，实际输出 1 2", "createdAt": "2026-06-12T10:00:00Z"},
-    {"status": "Wrong Answer", "language": "cpp", "code": "完整代码...", "errorMessage": "期望输出 0 1，实际输出 1 0", "createdAt": "2026-06-12T09:30:00Z"},
-    {"status": "Wrong Answer", "language": "cpp", "code": "完整代码...", "errorMessage": "编译错误", "createdAt": "2026-06-12T09:00:00Z"}
-  ]
-}
-```
-
-**滑动窗口**：最近 3 次提交记录
-
-**agent-service 处理**：
-1. RAG 检索相关知识（top-3 OI-Wiki + top-2 题解）
-2. 构建 prompt，注入标签字典
-3. 调用 LLM，要求返回 JSON：
-
-```json
-{
-  "summary": "问题总结",
-  "timeComplexity": "**O(n)** — 说明",
-  "spaceComplexity": "**O(1)** — 说明",
+  "timeComplexity": "**O(n)**",
+  "spaceComplexity": "**O(1)**",
   "algorithmTags": ["哈希表"],
-  "issues": [{"line": 10, "severity": "error", "message": "...", "hint": "..."}],
-  "suggestions": ["建议1", "建议2"]
+  "suggestions": ["建议内容"]
 }
 ```
 
-**算法标签约束**：prompt 中注入标签列表，要求 `algorithmTags` 字段的值必须来自该列表
+**前端渲染**：复杂度可视化曲线 + 算法标签对比（题目标签 vs 代码标签）+ 建议列表
 
 ---
 
@@ -138,46 +127,21 @@ OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，
 
 **触发场景**：用户通过题目后，点击"AI 生成题解"
 
-**数据流**：
-```
-前端 → OJ 后端 → agent-service → LLM → agent-service → OJ 后端 → 前端
-```
+**数据流**：同代码分析
 
-**OJ 后端组装的信息**：
-```json
-{
-  "problemId": 1001,
-  "problemTitle": "两数之和",
-  "problemContent": "题面内容...",
-  "problemEditorial": "官方题解...",
-  "algorithmTags": ["数组", "哈希表"],
-  "language": "cpp",
-  "code": "用户通过的代码...",
-  "recentSubmissions": [
-    {"status": "Wrong Answer", "code": "...", "createdAt": "2026-06-10T10:00:00Z"},
-    {"status": "Wrong Answer", "code": "...", "createdAt": "2026-06-11T09:00:00Z"},
-    {"status": "Accepted", "code": "...", "createdAt": "2026-06-12T08:00:00Z"}
-  ]
-}
-```
-
-**提交历史规则**：
-- 最近 3 天内，最多 5 条
-- 按时间由近到远
-- 必须包含最近一次 AC
+**OJ 后端传递**：题目信息（含题解、标签）+ 用户最近 AC 代码
 
 **agent-service 处理**：
-1. RAG 检索相关知识
-2. 构建 prompt，要求生成题解草稿
-3. 返回 JSON：
+1. RAG 检索（基于题目标签）
+2. 构建 prompt（含标签字典约束）
+3. 调用 LLM，返回题解草稿 JSON
 
+**LLM 输出**：
 ```json
 {
   "title": "题解标题",
   "content": "题解内容（Markdown）",
   "algorithmTags": ["哈希表"],
-  "highlights": ["亮点1"],
-  "pitfalls": ["踩坑点1"],
   "complexity": {"time": "**O(n)**", "space": "**O(n)**"}
 }
 ```
@@ -192,17 +156,13 @@ OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，
 
 **三个级别**：
 
-| 级别 | 传给 agent-service 的信息 | AI 输出 | 判题验证 |
-|------|--------------------------|---------|----------|
-| hint | 编辑器代码 + 题面 + 题解 + 样例 + 标签 | 提示（不给代码） | 否 |
-| explain | 同上 | 思路解释（不给代码） | 否 |
-| full | 同上 | 完整代码 | 是（状态机） |
+| 级别 | 传给 agent-service | AI 输出 | 判题验证 |
+|------|-------------------|---------|----------|
+| hint | 编辑器代码 + 题面 + 题解 + 样例 + 标签 | 一句话启发式提示 | 否 |
+| explain | 同上 | 指出最大的一个问题（不给解决方案） | 否 |
+| full | 同上 + 判题错误（重试时） | 完整代码 | 是（状态机，最多 3 次） |
 
-**hint/explain 的 prompt 设计**：
-- 如果用户编辑器为空或只有模板代码，AI 仅提示相关知识点
-- 如果用户有实现代码，AI 分析代码后给出针对性提示
-
-**full 级别的状态机**：
+**full 级别状态机**：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -213,30 +173,42 @@ OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，
 │                         ↓                                   │
 │  ② agent-service 返回代码                                    │
 │                         ↓                                   │
-│  ③ OJ 后端调用判题服务（不保存记录）                           │
+│  ③ OJ 后端调用 remote_judge 判题（不保存提交记录）            │
 │                         ↓                                   │
-│  ④ 判题结果 == AC?                                           │
-│     ├─ 是 → 返回代码给前端                                    │
-│     └─ 否 → 将判题结果+代码发回 agent-service                 │
+│  ④ 判题结果 == Accepted?                                     │
+│     ├─ 是 → 返回代码给前端 ✅                                 │
+│     └─ 否 → 将判题结果发回 agent-service，请求修正            │
 │                         ↓                                   │
 │  ⑤ agent-service 修改代码，返回新代码                         │
 │                         ↓                                   │
 │  ⑥ 重试次数 < 3?                                             │
 │     ├─ 是 → 回到 ③                                           │
-│     └─ 否 → 返回 "抱歉，我也无法通过此题"                      │
+│     └─ 否 → 返回 "经过 3 次尝试仍无法通过" ❌                  │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**agent-service 返回格式**：
+**实现位置**：`AIOJ-main/backend/internal/handler/ai.go` → `solveWithRetry()` 方法
+
+**LLM 输出（hint）**：
+```json
+{ "answer": "一句话启发式提示" }
+```
+
+**LLM 输出（explain）**：
+```json
+{ "answer": "当前代码最大的问题（Markdown）" }
+```
+
+**LLM 输出（full）**：
 ```json
 {
-  "code": "用户代码...",
+  "answer": "解题思路简述",
+  "code": "完整代码",
   "language": "cpp",
-  "explanation": "解题思路说明",
-  "algorithmTags": ["动态规划", "背包"],
-  "timeComplexity": "**O(n*m)**",
-  "spaceComplexity": "**O(m)**"
+  "timeComplexity": "**O(n)**",
+  "spaceComplexity": "**O(1)**",
+  "verifyResult": "✅ 代码已通过验证"
 }
 ```
 
@@ -249,89 +221,97 @@ OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，
 **特性**：
 - 支持自动注入题目上下文（题面、样例、用户代码）
 - 持久化到 `conversations` + `messages` 表
-- 同一会话内支持多轮记忆（最近 N 轮作为上下文）
-- 不同会话之间独立
-- RAG 自动检索注入
+- 同一会话内支持多轮记忆
+- 支持对话历史列表和删除
+- RAG 自动检索注入（基于题目标签）
 
-**OJ 后端组装的信息**：
+**OJ 后端传递**：
 ```json
 {
   "message": "用户消息",
   "conversationId": "uuid",
-  "problemId": 1001,
-  "problemContext": {
-    "title": "两数之和",
-    "content": "题面...",
-    "samples": [...],
-    "algorithmTags": ["数组", "哈希表"]
-  },
-  "codeContext": {
-    "language": "cpp",
-    "code": "用户当前编辑器代码"
-  },
-  "history": [
-    {"role": "user", "content": "之前的提问"},
-    {"role": "assistant", "content": "之前的回答"}
-  ]
+  "history": [{"role": "user", "content": "..."}, ...],
+  "problem": {"id": 1001, "title": "...", "content": "...", "tags": ["哈希表"], "samples": [...]},
+  "codeLanguage": "cpp",
+  "code": "用户当前编辑器代码"
 }
 ```
 
 **agent-service 处理**：
-1. RAG 检索相关知识（top-3）
-2. 构建 system prompt，注入题目上下文 + RAG 结果
-3. 调用 LLM，返回回复
+1. 使用题目标签做 RAG 检索（top-3 OI-Wiki）
+2. 构建 system prompt（含题目上下文 + RAG 结果 + 代码）
+3. 传入历史消息 + 当前消息
+4. 调用 LLM，返回纯文本回复
 
 ---
 
-### 4.5 知识图谱生成（Knowledge Graph）
+### 4.5 知识图谱（Knowledge Graph）
 
-**触发场景**：用户点击"整理我的知识图谱"
+**触发场景**：用户点击"AI 分析薄弱点"
 
 **数据流**：
 ```
-前端 → OJ 后端（整理用户做题数据） → agent-service → LLM → agent-service → OJ 后端 → 前端
+前端 → OJ 后端（整理做题数据 + 推送上下文获得 Prompt） → agent-service → LLM → agent-service → OJ 后端 → 前端
 ```
 
-**OJ 后端整理的数据**：
+**OJ 后端传递**：
 ```json
 {
-  "timeRange": "1month",
+  "scope": "recent",
   "problems": [
-    {"id": 1001, "title": "两数之和", "tags": ["数组", "哈希表"], "status": "AC", "attempts": 2},
-    {"id": 1002, "title": "最长回文子串", "tags": ["字符串", "动态规划"], "status": "WA", "attempts": 3}
+    {"id": 1001, "title": "两数之和", "tags": ["数组", "哈希表"], "status": "AC", "attempts": 2}
   ],
   "tagStats": {
     "数组": {"solved": 5, "attempted": 8, "acRate": 62.5},
-    "哈希表": {"solved": 3, "attempted": 4, "acRate": 75.0},
-    "动态规划": {"solved": 1, "attempted": 5, "acRate": 20.0}
+    "哈希表": {"solved": 3, "attempted": 4, "acRate": 75.0}
   }
 }
 ```
 
-**时间范围**：用户可选 1 周或 1 月（默认 1 月），不超过 1 个月
-
-**agent-service 处理**：
-1. 分析用户的算法掌握情况
-2. 生成知识图谱节点和边
-3. 返回 JSON：
-
+**agent-service 输出**：
 ```json
 {
-  "nodes": [
-    {"id": "数组", "label": "数组", "mastery": 80, "category": "基础算法"},
-    {"id": "动态规划", "label": "动态规划", "mastery": 20, "category": "动态规划"}
-  ],
-  "edges": [
-    {"source": "数组", "target": "哈希表", "type": "related"},
-    {"source": "动态规划", "target": "背包", "type": "contains"}
-  ],
-  "suggestions": ["建议加强动态规划练习"]
+  "nodes": [{"id": "哈希表", "label": "哈希表", "mastery": "proficient", "category": "数据结构"}],
+  "edges": [{"source": "数组", "target": "哈希表", "type": "related"}],
+  "suggestions": ["建议加强动态规划练习"],
+  "rawMarkdown": "分析文本..."
 }
 ```
 
-**标签约束**：节点的 `id` 和 `label` 必须来自统一标签字典
+**前端行为**：在右侧面板展示 AI 分析文本和建议，不覆盖节点颜色（节点颜色由后端从提交记录实时计算）。
 
-**持久化**：OJ 后端将结果存入数据库，支持后续个性化推荐
+---
+
+### 4.6 AI 创建题单（Create Study Plan）**新增**
+
+**触发场景**：知识图谱页点击"AI 创建题单"按钮
+
+**数据流**：
+```
+前端 → OJ 后端 → agent-service（两次 LLM 调用 + 题目检索） → OJ 后端（创建题单） → 前端
+```
+
+**OJ 后端处理**：
+1. 整理用户做题记录（problems + tagStats）
+2. 识别薄弱知识点（通过率 < 50% 或解决数 < 3）
+3. 对每个薄弱标签，按 `JSON_CONTAINS(tags, ...)` 检索未做过的题目作为候选
+4. 将用户数据 + 候选题目发送给 agent-service
+
+**agent-service 处理**：
+1. 分析用户的薄弱知识点
+2. 从候选题目中选择 5~15 道，按难度递进排列
+3. 生成题单标题和描述
+
+**LLM 输出**：
+```json
+{
+  "title": "题单标题",
+  "description": "题单描述",
+  "problemIDs": [1001, 1003, 1005]
+}
+```
+
+**OJ 后端**：根据返回的 problemIDs 创建 StudyPlan（含 UserID）
 
 ---
 
@@ -345,18 +325,12 @@ OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，
 | `/api/agent/code-diagnosis` | POST | 代码诊断 |
 | `/api/agent/solve` | POST | 解题辅助（hint/explain/full） |
 | `/api/agent/generate-solution` | POST | 题解生成 |
-| `/api/agent/knowledge-graph` | POST | 知识图谱生成 |
+| `/api/agent/knowledge-graph` | POST | 知识图谱薄弱点分析 |
+| `/api/agent/create-study-plan` | POST | AI 创建题单 |
 | `/api/agent/health` | GET | 健康检查 |
 | `/api/agent/rag-status` | GET | RAG 状态 |
 
-### 5.2 agent-service → OJ 后端
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/problems/:id/run` | POST | 运行代码（判题验证，不保存记录） |
-| `/api/tags/names` | GET | 获取标签字典 |
-
-### 5.3 前端 → OJ 后端
+### 5.2 前端 → OJ 后端（AI 相关）
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
@@ -364,11 +338,11 @@ OJ 后端的 `algorithm_tags` 表作为唯一标签字典，包含 90+ 标签，
 | `/api/ai/code-diagnosis` | POST | 代码诊断 |
 | `/api/ai/solve` | POST | 解题辅助 |
 | `/api/ai/generate-solution` | POST | 题解生成 |
-| `/api/ai/knowledge-graph` | POST | 知识图谱生成 |
-| `/api/ai/history` | GET | 对话历史 |
+| `/api/ai/knowledge-graph` | POST | 知识图谱分析 |
+| `/api/ai/create-study-plan` | POST | AI 创建题单 |
+| `/api/ai/history` | GET | 对话历史列表 |
 | `/api/ai/conversations/:id/messages` | GET | 会话消息 |
-| `/api/tags` | GET | 标签字典（按分类分组） |
-| `/api/tags/names` | GET | 标签名列表 |
+| `/api/ai/conversations/:id` | DELETE | 删除会话 |
 
 ---
 
@@ -381,40 +355,35 @@ ai:
   enabled: true
   endpoint: "http://127.0.0.1:8090/api/agent"
   api_key: ""
-  model: "mimo-v2.5-pro"
-  timeout_seconds: 60
+  model: "deepseek-chat"
+  timeout_seconds: 180
 ```
 
 ### 6.2 agent-service .env
 
 ```env
-# AI Provider
 AI_PROVIDER=openai
-OPENAI_API_KEY=your-api-key
-OPENAI_BASE_URL=https://token-plan-sgp.xiaomimimo.com/v1
-OPENAI_MODEL=mimo-v2.5-pro
-
-# Ollama (fallback)
+OPENAI_API_KEY=sk-xxxxxxxx
+OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_MODEL=deepseek-chat
+AI_THINKING=false
 OLLAMA_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5-coder:7b
-
-# Service
 AGENT_HTTP_ADDR=:8090
-AIOJ_BACKEND_URL=http://127.0.0.1:8080
+EMBEDDING_MODEL=nomic-embed-text:latest
 ```
+
+> `.env` 在 `agent-service/` 目录下，已加入 `.gitignore`
 
 ---
 
-## 七、待实现清单
+## 七、关键设计决策
 
-| 优先级 | 功能 | 状态 |
-|--------|------|------|
-| P0 | 统一标签字典（AlgorithmTag + KnowledgePoint 合并） | 待实现 |
-| P0 | OJ 后端 AI 端点配置修正（enabled=true, port=8090） | 待实现 |
-| P0 | OJ 后端组装上下文转发给 agent-service | 待实现 |
-| P1 | 代码诊断：滑动窗口 + 统一标签 | 待实现 |
-| P1 | 题解生成：提交历史 + 自动填充 | 待实现 |
-| P1 | 解题辅助：hint/explain/full + 状态机 | 待实现 |
-| P1 | AI 对话：持久化 + 多轮记忆 + RAG | 待实现 |
-| P2 | 知识图谱：用户数据整理 + 持久化 | 待实现 |
-| P2 | RAG：题解索引 + 标签关联检索 | 待实现 |
+| 决策 | 说明 |
+|------|------|
+| 知识图谱掌握度 | 实时从 submissions 表计算（用户做过该标签的题数 / 该标签总题数 × 100），不依赖 AI |
+| 题目检索方式 | 通过 `JSON_CONTAINS(tags, '"标签名"')` 直接匹配 problems.tags，不使用桥接表 |
+| 标签字典同步 | 知识点表 → 同步到 algorithm_tags 表 → 题目标签校验 → agent-service 硬编码常量 |
+| 分类节点架构 | 每个分类节点（如"图论（分类）"）下有一个同名叶子节点（"图论"）承接题目映射 |
+| 题单权限 | 创建者可以编辑/删除，其他用户只能收藏/查看 |
+| reasoning 模式 | 已移除（DeepSeek 不支持 `thinking` 字段） |

@@ -184,45 +184,73 @@
           <!-- RESULT VIEW (replaces left panel when active) -->
           <template v-else-if="resultView">
             <div class="result-view">
-              <!-- Status banner -->
-              <div class="result-status-banner" :class="getBannerClass(resultView.status)">
-                <div class="banner-status">
-                  <span class="banner-status-text">{{ resultView.status }}</span>
-                  <span v-if="resultView.status === 'Accepted'" class="banner-check">✓</span>
-                  <span v-else-if="['Pending', 'Queueing', 'Compiling', 'Running'].includes(resultView.status)" class="banner-spinner" />
-                </div>
-                <div class="banner-stats">
-                  <div class="banner-stat">
-                    <span class="banner-stat-label">执行用时</span>
-                    <span class="banner-stat-value">{{ displayRuntime(resultView) }}</span>
-                  </div>
-                  <div class="banner-stat">
-                    <span class="banner-stat-label">内存消耗</span>
-                    <span class="banner-stat-value">{{ displayMemory(resultView) }}</span>
-                  </div>
-                  <div class="banner-stat">
-                    <span class="banner-stat-label">语言</span>
-                    <span class="banner-stat-value">{{ resultView.language }}</span>
-                  </div>
-                </div>
-              </div>
 
-              <!-- Error details -->
-              <div v-if="resultView.status !== 'Accepted'" class="result-error-section">
-                <div v-if="resultView.errorMessage" class="error-block">
-                  <div class="error-block-title">错误信息</div>
-                  <pre class="error-pre">{{ resultView.errorMessage }}</pre>
+              <!-- Run mode: show all case results -->
+              <template v-if="resultView.source === 'run'">
+                <div class="run-result-metrics">
+                  <span class="run-metric">执行用时 {{ displayRuntime(resultView) }}</span>
+                  <span class="run-metric">内存 {{ displayMemory(resultView) }}</span>
                 </div>
                 <div v-if="resultView.compileOutput" class="error-block">
                   <div class="error-block-title">编译输出</div>
                   <pre class="error-pre">{{ resultView.compileOutput }}</pre>
                 </div>
-                <div v-if="resultView.stdout || resultView.stderr" class="error-block">
-                  <div class="error-block-title">运行输出</div>
-                  <pre v-if="resultView.stdout" class="error-pre">{{ resultView.stdout }}</pre>
-                  <pre v-if="resultView.stderr" class="error-pre error-text">{{ resultView.stderr }}</pre>
+                <div v-for="(cr, ci) in (resultView.caseResults || [])" :key="ci" class="run-case-card">
+                  <div class="run-case-header">
+                    <span class="run-case-title">样例 {{ ci + 1 }}</span>
+                    <span class="run-case-stats">{{ cr.runtimeMs ?? 0 }}ms | {{ cr.memoryKb ?? 0 }}KB</span>
+                  </div>
+                  <div class="run-output-compare">
+                    <div class="run-output-col">
+                      <div class="tc-label">实际输出</div>
+                      <pre class="run-output-pre">{{ cr.stdoutPreview || '(无输出)' }}</pre>
+                    </div>
+                    <div class="run-output-col">
+                      <div class="tc-label">预期输出</div>
+                      <pre class="run-output-pre expected">{{ cr.expected || testCases[ci]?.expected || '(未提供)' }}</pre>
+                    </div>
+                  </div>
+                  <div v-if="cr.stderrPreview" class="run-case-error">
+                    <div class="tc-label">错误</div>
+                    <pre class="run-output-pre error-text">{{ cr.stderrPreview }}</pre>
+                  </div>
                 </div>
-              </div>
+              </template>
+
+              <!-- Submit mode: status banner + details -->
+              <template v-else>
+                <div class="result-status-banner" :class="getBannerClass(resultView.status)">
+                  <div class="banner-status">
+                    <span class="banner-status-text">{{ resultView.status }}</span>
+                    <span v-if="resultView.status === 'Accepted'" class="banner-check">✓</span>
+                    <span v-else-if="['Pending', 'Queueing', 'Compiling', 'Running'].includes(resultView.status)" class="banner-spinner" />
+                  </div>
+                  <div class="banner-stats">
+                    <div class="banner-stat">
+                      <span class="banner-stat-label">执行用时</span>
+                      <span class="banner-stat-value">{{ displayRuntime(resultView) }}</span>
+                    </div>
+                    <div class="banner-stat">
+                      <span class="banner-stat-label">内存消耗</span>
+                      <span class="banner-stat-value">{{ displayMemory(resultView) }}</span>
+                    </div>
+                    <div class="banner-stat">
+                      <span class="banner-stat-label">语言</span>
+                      <span class="banner-stat-value">{{ resultView.language }}</span>
+                    </div>
+                  </div>
+                </div>
+                <template v-if="resultView.status !== 'Accepted'">
+                  <div v-if="resultView.errorMessage" class="error-block">
+                    <div class="error-block-title">错误信息</div>
+                    <pre class="error-pre">{{ resultView.errorMessage }}</pre>
+                  </div>
+                  <div v-if="resultView.compileOutput" class="error-block">
+                    <div class="error-block-title">编译输出</div>
+                    <pre class="error-pre">{{ resultView.compileOutput }}</pre>
+                  </div>
+                </template>
+              </template>
 
               <!-- Failed case details -->
               <div v-if="failedCases.length" class="result-cases-section">
@@ -259,8 +287,8 @@
                 </div>
               </div>
 
-              <!-- AI Analysis -->
-              <div class="result-ai-section">
+              <!-- AI Analysis (only after judging completes) -->
+              <div v-if="resultView.source === 'submit' && isTerminalStatus(resultView.status)" class="result-ai-section">
                 <div class="ai-section-header">
                   <span class="ai-section-title">
                     <el-icon><MagicStick /></el-icon>
@@ -279,8 +307,50 @@
                   <el-icon class="is-loading"><Loading /></el-icon>
                   <span>AI 正在分析代码...</span>
                 </div>
-                <div v-else-if="aiAnalysis" class="ai-content">
-                  <MarkdownRenderer :content="aiAnalysis" />
+                <div v-else-if="aiAnalysis" class="ai-analysis-content">
+                  <!-- Algorithm Tags: problem vs code -->
+                  <div class="ai-tags-compare">
+                    <div v-if="problem?.tags?.length" class="ai-tags-group">
+                      <span class="ai-tags-label">题目标签</span>
+                      <div class="ai-tags-row">
+                        <span v-for="tag in problem.tags" :key="'p-'+tag" class="ai-tag ai-tag-problem">{{ tag }}</span>
+                      </div>
+                    </div>
+                    <div v-if="aiAnalysis.algorithmTags?.length" class="ai-tags-group">
+                      <span class="ai-tags-label">代码标签</span>
+                      <div class="ai-tags-row">
+                        <span v-for="tag in aiAnalysis.algorithmTags" :key="'c-'+tag" class="ai-tag ai-tag-code">{{ tag }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Complexity -->
+                  <div v-if="aiAnalysis.timeComplexity || aiAnalysis.spaceComplexity" class="ai-complexity-row">
+                    <div v-if="aiAnalysis.timeComplexity" class="ai-complexity-item">
+                      <span class="ai-complexity-label">时间复杂度</span>
+                      <span class="ai-complexity-value" v-html="stripBold(aiAnalysis.timeComplexity)"></span>
+                    </div>
+                    <div v-if="aiAnalysis.spaceComplexity" class="ai-complexity-item">
+                      <span class="ai-complexity-label">空间复杂度</span>
+                      <span class="ai-complexity-value" v-html="stripBold(aiAnalysis.spaceComplexity)"></span>
+                    </div>
+                  </div>
+                  <!-- Complexity Charts -->
+                  <div v-if="aiAnalysis.timeComplexity || aiAnalysis.spaceComplexity" class="ai-charts-row">
+                    <div v-if="aiAnalysis.timeComplexity" class="ai-chart-container">
+                      <div ref="timeChartRef" class="ai-complexity-chart"></div>
+                    </div>
+                    <div v-if="aiAnalysis.spaceComplexity" class="ai-chart-container">
+                      <div ref="spaceChartRef" class="ai-complexity-chart"></div>
+                    </div>
+                  </div>
+                  <!-- Suggestions -->
+                  <div v-if="aiAnalysis.suggestions?.length" class="ai-suggestions">
+                    <MarkdownRenderer :content="aiAnalysis.suggestions.map(s => '- ' + s).join('\n')" />
+                  </div>
+                  <!-- Raw markdown fallback -->
+                  <div v-if="!aiAnalysis.algorithmTags?.length && !aiAnalysis.timeComplexity && aiAnalysis.rawMarkdown" class="ai-content">
+                    <MarkdownRenderer :content="aiAnalysis.rawMarkdown" />
+                  </div>
                 </div>
                 <div v-else class="ai-placeholder">
                   点击按钮，AI 将分析你的代码并给出{{ resultView.status === 'Accepted' ? '优化建议' : '改进建议' }}
@@ -351,44 +421,17 @@
                 placeholder="输入测试数据..."
               />
             </div>
-            <div v-if="testCases[activeCaseIdx].expected !== undefined" class="tc-section">
-              <div class="tc-label">
-                预期输出
-                <button class="tc-toggle" @click="toggleExpected">隐藏</button>
-              </div>
+            <div class="tc-section">
+              <div class="tc-label">预期输出</div>
               <textarea
                 v-model="testCases[activeCaseIdx].expected"
                 class="tc-textarea"
                 rows="2"
                 spellcheck="false"
-                placeholder="预期输出（可选）"
+                placeholder="预期输出（可留空）"
               />
             </div>
-            <div v-else>
-              <button class="tc-toggle" @click="toggleExpected">+ 添加预期输出</button>
-            </div>
 
-            <!-- Run result inline -->
-            <div v-if="resultView && resultView.source === 'run'" class="tc-run-result">
-              <div class="tc-run-header">
-                <span class="tc-run-status" :class="statusBadgeClass(resultView.status)">
-                  {{ resultView.status }}
-                </span>
-                <span class="tc-run-stats">{{ displayRuntime(resultView) }} | {{ displayMemory(resultView) }}</span>
-              </div>
-              <div v-if="resultView.stdout" class="tc-run-output">
-                <div class="tc-label">输出</div>
-                <pre class="tc-pre">{{ resultView.stdout }}</pre>
-              </div>
-              <div v-if="resultView.stderr" class="tc-run-output">
-                <div class="tc-label">错误</div>
-                <pre class="tc-pre error-text">{{ resultView.stderr }}</pre>
-              </div>
-              <div v-if="resultView.compileOutput" class="tc-run-output">
-                <div class="tc-label">编译输出</div>
-                <pre class="tc-pre">{{ resultView.compileOutput }}</pre>
-              </div>
-            </div>
           </div>
 
           <!-- Collapsed state -->
@@ -411,22 +454,31 @@
           <el-button text size="small" @click="chatOpen = false"><el-icon><Close /></el-icon></el-button>
         </div>
         <div class="ai-chat-messages" ref="chatMessagesRef">
-          <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', msg.role]">
+          <div v-if="aiStore.currentMessages.length === 0" class="chat-msg assistant">
+            <div class="chat-msg-content">你好！我是 AI 助手，可以帮你解答关于这道题的问题、分析代码或给出提示。</div>
+          </div>
+          <div v-for="(msg, i) in aiStore.currentMessages" :key="i" :class="['chat-msg', msg.role]">
             <div class="chat-msg-content">{{ msg.content }}</div>
           </div>
-          <div v-if="chatLoading" class="chat-msg assistant">
+          <div v-if="aiStore.chatLoading" class="chat-msg assistant">
             <div class="chat-msg-content"><el-icon class="is-loading"><Loading /></el-icon> 思考中...</div>
           </div>
         </div>
         <div class="ai-chat-input">
-          <el-input v-model="chatInput" placeholder="询问关于这道题的问题..." @keyup.enter="sendChat" :disabled="chatLoading">
+          <el-input v-model="chatInput" placeholder="询问关于这道题的问题..." @keyup.enter="sendChat" :disabled="aiStore.chatLoading">
             <template #append>
-              <el-button @click="sendChat" :loading="chatLoading">发送</el-button>
+              <el-button @click="sendChat" :loading="aiStore.chatLoading">发送</el-button>
             </template>
           </el-input>
           <div class="chat-context-hint">
             <el-button text size="small" @click="sendCodeContext">
               <el-icon><Document /></el-icon> 发送当前代码
+            </el-button>
+            <el-button text size="small" @click="requestHint" :loading="aiStore.solveLoading">
+              <el-icon><MagicStick /></el-icon> 提示
+            </el-button>
+            <el-button text size="small" @click="requestExplain" :loading="aiStore.solveLoading">
+              <el-icon><ChatDotRound /></el-icon> 解释
             </el-button>
           </div>
         </div>
@@ -436,7 +488,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useProblemStore } from '@/stores/problem'
@@ -444,14 +496,17 @@ import { problemApi } from '@/api/problem'
 import { aiApi } from '@/api/ai'
 import { useSubmissionStore } from '@/stores/submission'
 import { useUserStore } from '@/stores/user'
+import { useAIStore } from '@/stores/ai'
 import CodeEditor from '@/components/CodeEditor.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import * as echarts from 'echarts'
 
 const route = useRoute()
 const router = useRouter()
 const problemStore = useProblemStore()
 const submissionStore = useSubmissionStore()
 const userStore = useUserStore()
+const aiStore = useAIStore()
 
 const problem = computed(() => problemStore.currentProblem)
 const recentSubmissions = ref([])
@@ -461,13 +516,15 @@ const submissionCodes = ref({})
 const loadingCode = ref({})
 const solutionDialogVisible = ref(false)
 const viewingSolution = ref(null)
-const aiAnalysis = ref('')
+const aiAnalysis = ref(null)
 const aiAnalysisLoading = ref(false)
+const timeChartRef = ref(null)
+const spaceChartRef = ref(null)
+let timeChart = null
+let spaceChart = null
 const chatOpen = ref(false)
-const chatMessages = ref([{ role: 'assistant', content: '你好！我是 AI 助手，可以帮你解答关于这道题的问题、分析代码或给出提示。' }])
-const chatInput = ref('')
-const chatLoading = ref(false)
 const chatMessagesRef = ref(null)
+const chatInput = ref('')
 const testcaseCollapsed = ref(false)
 const samplesCollapsed = ref(false)
 const testcasePanelHeight = ref(260)
@@ -652,7 +709,9 @@ async function handleSubmit() {
   const codeVal = code.value || codeEditorRef.value?.getCode()
   if (!codeVal?.trim()) { ElMessage.warning('请先输入代码'); return }
   submitting.value = true
-  aiAnalysis.value = ''
+  aiAnalysis.value = null
+  aiAnalysisLoading.value = false
+  disposeCharts()
   // Show pending state immediately
   resultView.value = { status: 'Pending', source: 'submit', language: language.value }
   try {
@@ -673,14 +732,19 @@ async function handleRun() {
   const codeVal = code.value || codeEditorRef.value?.getCode()
   if (!codeVal?.trim()) { ElMessage.warning('请先输入代码'); return }
   running.value = true
-  // For run, show result inline in test case panel (not left panel)
   const prevResult = resultView.value
   if (resultView.value?.source !== 'submit') resultView.value = null
   try {
-    const res = await problemStore.runProblem(problem.value.id, { language: language.value, code: codeVal, customInput: customInput.value })
+    const cases = testCases.value.map(tc => ({
+      input: tc.input || '',
+      expected: tc.expected || ''
+    }))
+    const res = await problemStore.runProblem(problem.value.id, {
+      language: language.value,
+      code: codeVal,
+      testCases: cases
+    })
     resultView.value = { ...res, source: 'run' }
-    if (res.status === 'Accepted') ElMessage.success('运行完成')
-    else ElMessage.warning(`运行结果: ${res.status}`)
   } catch { ElMessage.error('运行失败'); resultView.value = prevResult }
   finally { running.value = false }
 }
@@ -729,9 +793,69 @@ function isTerminalStatus(status) {
   return ['Accepted', 'Wrong Answer', 'Compile Error', 'Runtime Error', 'Time Limit Exceeded', 'Memory Limit Exceeded', 'Output Limit Exceeded', 'System Error'].includes(status)
 }
 
+
+function stripBold(s) { return s ? s.replace(/\*\*/g, '') : '' }
+
+function parseComplexity(str) {
+  if (!str) return null
+  const cleaned = str.replace(/\*\*/g, '').trim()
+  const m = cleaned.match(/^O\((.+)\)$/)
+  if (!m) return null
+  const inner = m[1].toLowerCase().replace(/\s/g, '')
+  const funcs = {
+    '1': { name: 'O(1)', fn: () => 1, color: '#67c23a' },
+    'logn': { name: 'O(log n)', fn: (n) => Math.log2(Math.max(n, 1)), color: '#409eff' },
+    'n': { name: 'O(n)', fn: (n) => n, color: '#e6a23c' },
+    'nlogn': { name: 'O(n log n)', fn: (n) => n * Math.log2(Math.max(n, 1)), color: '#f56c6c' },
+    'n^2': { name: 'O(n²)', fn: (n) => n * n, color: '#e040fb' },
+    'n2': { name: 'O(n²)', fn: (n) => n * n, color: '#e040fb' },
+    'n^3': { name: 'O(n³)', fn: (n) => n * n * n, color: '#9c27b0' },
+    'n3': { name: 'O(n³)', fn: (n) => n * n * n, color: '#9c27b0' },
+    '2^n': { name: 'O(2ⁿ)', fn: (n) => Math.pow(2, n), color: '#ff5722' },
+    '2n': { name: 'O(2ⁿ)', fn: (n) => Math.pow(2, n), color: '#ff5722' },
+    'n!': { name: 'O(n!)', fn: (n) => { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r }, color: '#b71c1c' },
+  }
+  return funcs[inner] || null
+}
+
+let chartResizeObserver = null
+function disposeCharts() {
+  if (timeChart) { timeChart.dispose(); timeChart = null }
+  if (spaceChart) { spaceChart.dispose(); spaceChart = null }
+  if (chartResizeObserver) { chartResizeObserver.disconnect(); chartResizeObserver = null }
+}
+
+function makeLineChart(domEl, complexity, title) {
+  if (!domEl) return null
+  const c = parseComplexity(complexity)
+  if (!c) return null
+  const chart = echarts.init(domEl)
+  const xs = Array.from({ length: 20 }, (_, i) => i + 1)
+  chart.setOption({
+    grid: { top: 28, right: 12, bottom: 20, left: 12 },
+    title: { text: title + '  ' + c.name, left: 'center', top: 2, textStyle: { fontSize: 12, fontWeight: 600 } },
+    xAxis: { type: 'category', data: xs, axisTick: { show: false }, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#ccc' } } },
+    yAxis: { type: 'value', axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false }, axisLine: { show: false } },
+    tooltip: { trigger: 'axis', formatter: (params) => `n=${params[0].axisValue}<br/>${params[0].marker}${params[0].seriesName}: ${params[0].value}` },
+    series: [{ name: c.name, type: 'line', smooth: true, symbol: 'none', lineStyle: { width: 2.5 }, itemStyle: { color: c.color }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: c.color + '30' }, { offset: 1, color: c.color + '05' }] } }, data: xs.map(x => Math.min(c.fn(x), 1e6)) }]
+  })
+  return chart
+}
+
+function initComplexityCharts() {
+  disposeCharts()
+  timeChart = makeLineChart(timeChartRef.value, aiAnalysis.value?.timeComplexity, '时间复杂度')
+  spaceChart = makeLineChart(spaceChartRef.value, aiAnalysis.value?.spaceComplexity, '空间复杂度')
+  const targets = [timeChartRef.value, spaceChartRef.value].filter(Boolean)
+  if (targets.length) {
+    chartResizeObserver = new ResizeObserver(() => { if (timeChart) timeChart.resize(); if (spaceChart) spaceChart.resize() })
+    targets.forEach(el => chartResizeObserver.observe(el))
+  }
+}
+
 async function fetchAIAnalysis() {
   if (!resultView.value || !code.value) return
-  aiAnalysisLoading.value = true; aiAnalysis.value = ''
+  aiAnalysisLoading.value = true; aiAnalysis.value = null
   try {
     const rv = resultView.value
     const payload = {
@@ -744,26 +868,48 @@ async function fetchAIAnalysis() {
       memoryKb: rv.memoryKb ?? 0
     }
     const res = await aiApi.diagnoseCode(payload)
-    aiAnalysis.value = res.data?.rawMarkdown || res.data?.summary || '暂时无法提供分析'
-  } catch { aiAnalysis.value = 'AI 分析暂时不可用' }
-  finally { aiAnalysisLoading.value = false }
+    aiAnalysis.value = res.data
+    nextTick(() => initComplexityCharts())
+  } catch {
+    aiAnalysis.value = { rawMarkdown: 'AI 分析暂时不可用' }
+  } finally { aiAnalysisLoading.value = false }
 }
 
 function scrollChatToBottom() { setTimeout(() => { if (chatMessagesRef.value) chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight }, 50) }
 async function sendChat() {
   const msg = chatInput.value.trim()
-  if (!msg || chatLoading.value) return
-  chatMessages.value.push({ role: 'user', content: msg }); chatInput.value = ''; chatLoading.value = true; scrollChatToBottom()
+  if (!msg || aiStore.chatLoading) return
+  chatInput.value = ''
+  scrollChatToBottom()
+  const codeCtx = code.value ? { language: language.value, code: code.value } : null
   try {
-    const res = await aiApi.chat({ message: msg, problem_id: problem.value?.id, history: chatMessages.value.slice(-10).map(m => ({ role: m.role, content: m.content })) })
-    chatMessages.value.push({ role: 'assistant', content: res.data?.reply || '暂时无法回复' })
-  } catch { chatMessages.value.push({ role: 'assistant', content: 'AI 服务暂时不可用' }) }
-  finally { chatLoading.value = false; scrollChatToBottom() }
+    await aiStore.sendMessage(msg, problem.value, codeCtx)
+  } catch {}
+  finally { scrollChatToBottom() }
 }
 async function sendCodeContext() {
   if (!code.value) { ElMessage.warning('编辑器中没有代码'); return }
-  chatInput.value = `请分析我的代码并给出改进建议：\n\`\`\`${language.value}\n${code.value}\n\`\`\``
-  sendChat()
+  const msg = `请分析我的代码并给出改进建议：\n\`\`\`${language.value}\n${code.value}\n\`\`\``
+  chatInput.value = ''
+  scrollChatToBottom()
+  try {
+    await aiStore.sendMessage(msg, problem.value, { language: language.value, code: code.value })
+  } catch {}
+  finally { scrollChatToBottom() }
+}
+async function requestHint() {
+  scrollChatToBottom()
+  try {
+    await aiStore.solveProblem({ problemId: problem.value?.id, level: 'hint', language: language.value, code: code.value })
+  } catch {}
+  finally { scrollChatToBottom() }
+}
+async function requestExplain() {
+  scrollChatToBottom()
+  try {
+    await aiStore.solveProblem({ problemId: problem.value?.id, level: 'explain', language: language.value, code: code.value })
+  } catch {}
+  finally { scrollChatToBottom() }
 }
 
 // Sync submission status updates to resultView during active submission
@@ -777,8 +923,11 @@ watch(() => route.params.id, async () => {
   language.value = 'cpp'; code.value = ''; resultView.value = null; leftTab.value = 'description'
   await problemStore.fetchProblem(route.params.id); loadSamples(); await loadRecentSubmissions()
 })
-onMounted(async () => { await problemStore.fetchProblem(route.params.id); loadSamples(); await loadRecentSubmissions() })
-onBeforeUnmount(() => { stopResize() })
+onMounted(async () => {
+  await problemStore.fetchProblem(route.params.id); loadSamples(); await loadRecentSubmissions()
+  window.addEventListener('resize', () => { if (timeChart) timeChart.resize(); if (spaceChart) spaceChart.resize() })
+})
+onBeforeUnmount(() => { stopResize(); disposeCharts() })
 </script>
 
 <style scoped>
@@ -893,6 +1042,24 @@ onBeforeUnmount(() => { stopResize() })
 .banner-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .banner-stat-value { font-size: 16px; font-weight: 700; font-family: 'SF Mono', 'Cascadia Code', monospace; }
 
+/* Run result */
+.run-result-metrics { display: flex; gap: 20px; font-size: 13px; color: var(--text-secondary); }
+.run-metric { font-family: 'SF Mono', 'Cascadia Code', monospace; }
+.run-case-card { border: 1px solid var(--border-light); border-radius: 8px; overflow: hidden; }
+.run-case-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--bg-hover); font-size: 13px; font-weight: 600; }
+.run-case-title { color: var(--text-primary); }
+.run-case-stats { font-size: 12px; color: var(--text-muted); font-family: 'SF Mono', 'Cascadia Code', monospace; }
+.run-case-error { padding: 0 12px 10px; }
+.run-output-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; }
+.run-output-col { display: flex; flex-direction: column; gap: 6px; }
+.run-output-pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-size: 12px; line-height: 1.6; font-family: 'SF Mono', 'Cascadia Code', monospace;
+  background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px;
+  padding: 10px; min-height: 40px; max-height: 200px; overflow-y: auto;
+}
+.run-output-pre.expected { background: var(--bg-warm); }
+
 /* Error section */
 .result-error-section { display: flex; flex-direction: column; gap: 10px; }
 .error-block { background: var(--bg-hover); border: 1px solid var(--border-light); border-radius: 8px; padding: 12px; }
@@ -926,6 +1093,22 @@ onBeforeUnmount(() => { stopResize() })
 .ai-loading { display: flex; align-items: center; gap: 8px; padding: 8px 0; color: var(--text-muted); font-size: 13px; }
 .ai-content { font-size: 13px; line-height: 1.7; }
 .ai-placeholder { font-size: 12px; color: var(--text-muted); }
+.ai-analysis-content { display: flex; flex-direction: column; gap: 12px; }
+.ai-tags-compare { display: flex; gap: 16px; }
+.ai-tags-group { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.ai-tags-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.ai-tags-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
+.ai-tag-problem { background: var(--el-color-warning-light-9); color: var(--el-color-warning); border: 1px solid var(--el-color-warning-light-7); }
+.ai-tag-code { background: var(--el-color-primary-light-9); color: var(--el-color-primary); border: 1px solid var(--el-color-primary-light-7); }
+.ai-complexity-row { display: flex; gap: 20px; }
+.ai-complexity-item { display: flex; flex-direction: column; gap: 2px; }
+.ai-complexity-label { font-size: 11px; color: var(--text-muted); }
+.ai-complexity-value { font-size: 15px; font-weight: 600; color: var(--text-color); font-family: 'JetBrains Mono', monospace; }
+.ai-charts-row { display: flex; gap: 10px; }
+.ai-chart-container { flex: 1; min-width: 0; border: 1px solid var(--border-light); border-radius: 8px; padding: 8px; background: var(--bg-main); }
+.ai-complexity-chart { width: 100%; height: 180px; }
+.ai-suggestions { font-size: 13px; line-height: 1.7; }
 
 /* Divider */
 .divider { width: 4px; cursor: col-resize; background: var(--border-light); transition: background 0.15s; flex-shrink: 0; }

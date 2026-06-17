@@ -104,6 +104,23 @@ type problemListItem struct {
 	Attempted       bool               `json:"attempted"`
 }
 
+// validateTags rejects tags that are not in the algorithm_tags dictionary.
+func (h *ProblemHandler) validateTags(tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+	var validNames []string
+	h.DB.Model(&models.AlgorithmTag{}).Pluck("name", &validNames)
+	validSet := make(map[string]bool, len(validNames))
+	for _, n := range validNames { validSet[n] = true }
+	for _, t := range tags {
+		if !validSet[t] {
+			return fmt.Errorf("算法标签 %q 不在系统标签字典中", t)
+		}
+	}
+	return nil
+}
+
 func (h *ProblemHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
@@ -697,6 +714,10 @@ func (h *ProblemHandler) Create(c *gin.Context) {
 		utils.BadRequest(c, "at least one test case is required")
 		return
 	}
+	if err := h.validateTags(req.Tags); err != nil {
+		utils.BadRequest(c, err.Error())
+		return
+	}
 
 	editorID, _ := middleware.CurrentUserID(c)
 	now := time.Now().UTC()
@@ -762,6 +783,10 @@ func (h *ProblemHandler) Update(c *gin.Context) {
 	var req updateProblemReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "invalid problem payload")
+		return
+	}
+	if err := h.validateTags(req.Tags); err != nil {
+		utils.BadRequest(c, err.Error())
 		return
 	}
 

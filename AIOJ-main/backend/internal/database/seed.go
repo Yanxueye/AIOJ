@@ -35,9 +35,6 @@ func Seed(conn *gorm.DB) error {
 	if err := seedAnnouncements(conn); err != nil {
 		return err
 	}
-	if err := seedProblemKnowledgeMappings(conn); err != nil {
-		return err
-	}
 	if err := seedRatingHistory(conn); err != nil {
 		return err
 	}
@@ -559,42 +556,6 @@ func seedDailyChallenges(conn *gorm.DB) error {
 	return nil
 }
 
-func seedProblemKnowledgeMappings(conn *gorm.DB) error {
-	var count int64
-	conn.Model(&models.ProblemKnowledgePoint{}).Count(&count)
-	if count > 0 {
-		return nil
-	}
-
-	// Map problems to knowledge points based on their tags and content
-	mappings := []models.ProblemKnowledgePoint{
-		// 1001 两数之和 - 数组, 哈希表
-		{ProblemID: 1001, KnowledgePointID: getKPID(conn, "哈希表")},
-		{ProblemID: 1001, KnowledgePointID: getKPID(conn, "二分")},
-		// 1002 最长回文子串 - 字符串, 动态规划
-		{ProblemID: 1002, KnowledgePointID: getKPID(conn, "动态规划")},
-		{ProblemID: 1002, KnowledgePointID: getKPID(conn, "哈希")},
-		// 1003 合并K个升序链表 - 堆, 链表, 分治
-		{ProblemID: 1003, KnowledgePointID: getKPID(conn, "堆")},
-		{ProblemID: 1003, KnowledgePointID: getKPID(conn, "分治")},
-		// 1004 零钱兑换 - 动态规划, 贪心
-		{ProblemID: 1004, KnowledgePointID: getKPID(conn, "动态规划")},
-		{ProblemID: 1004, KnowledgePointID: getKPID(conn, "背包DP")},
-		// 1005 岛屿数量 - 搜索, 图论, 并查集
-		{ProblemID: 1005, KnowledgePointID: getKPID(conn, "BFS")},
-		{ProblemID: 1005, KnowledgePointID: getKPID(conn, "DFS")},
-		{ProblemID: 1005, KnowledgePointID: getKPID(conn, "并查集")},
-	}
-
-	for _, m := range mappings {
-		if m.KnowledgePointID > 0 {
-			conn.Create(&m)
-		}
-	}
-	log.Println("[seed] problem-knowledge mappings seeded")
-	return nil
-}
-
 func seedRatingHistory(conn *gorm.DB) error {
 	var count int64
 	conn.Model(&models.RatingHistory{}).Where("reason = ?", "AC").Count(&count)
@@ -705,10 +666,3 @@ func seedSubmissions(conn *gorm.DB) error {
 	return nil
 }
 
-func getKPID(conn *gorm.DB, name string) uint64 {
-	var kp models.KnowledgePoint
-	if err := conn.Where("name = ?", name).First(&kp).Error; err != nil {
-		return 0
-	}
-	return kp.ID
-}

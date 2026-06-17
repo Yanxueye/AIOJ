@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 
@@ -69,32 +70,44 @@ func (h *KnowledgeHandler) Graph(c *gin.Context) {
 		}
 	}
 
-	// Count problems per knowledge point
-	type ProblemCount struct {
-		KnowledgePointID uint64
-		Count            int
-	}
-	var counts []ProblemCount
-	if err := h.DB.Model(&models.ProblemKnowledgePoint{}).
-		Select("knowledge_point_id, COUNT(*) as count").
-		Group("knowledge_point_id").Scan(&counts).Error; err != nil {
-		log.Printf("[knowledge] problem count query failed: %v", err)
-	}
+	// Count problems per knowledge point — match by tag name
 	countMap := make(map[uint64]int)
-	for _, pc := range counts {
-		countMap[pc.KnowledgePointID] = pc.Count
+	for i := range points {
+		kp := &points[i]
+		var cnt int64
+		h.DB.Model(&models.Problem{}).
+			Where("status = ? AND JSON_CONTAINS(tags, ?)", models.ProblemStatusPublished,
+				fmt.Sprintf(`"%s"`, kp.Name)).Count(&cnt)
+		countMap[kp.ID] = int(cnt)
 	}
 
-	// User mastery if logged in
+	// User mastery computed in real-time: for each KP, tried/total
 	uid, _ := middleware.CurrentUserID(c)
 	masteryMap := make(map[uint64]float64)
 	if uid > 0 {
-		var masteries []models.UserKnowledgeMastery
-		if err := h.DB.Where("user_id = ?", uid).Find(&masteries).Error; err != nil {
-			log.Printf("[knowledge] mastery query for uid=%d failed: %v", uid, err)
-		}
-		for _, m := range masteries {
-			masteryMap[m.KnowledgePointID] = m.MasteryLevel
+		var triedPIDs []uint64
+		h.DB.Model(&models.Submission{}).
+			Where("user_id = ?", uid).
+			Distinct("problem_id").
+			Pluck("problem_id", &triedPIDs)
+		triedSet := make(map[uint64]bool, len(triedPIDs))
+		for _, id := range triedPIDs { triedSet[id] = true }
+
+		for i := range points {
+			kp := &points[i]
+			total := countMap[kp.ID]
+			if total == 0 { continue }
+
+			var tagProblems []models.Problem
+			h.DB.Where("status = ? AND JSON_CONTAINS(tags, ?)", models.ProblemStatusPublished,
+				fmt.Sprintf(`"%s"`, kp.Name)).Find(&tagProblems)
+			tried := 0
+			for _, p := range tagProblems {
+				if triedSet[p.ID] { tried++ }
+			}
+			if tried > 0 {
+				masteryMap[kp.ID] = float64(tried) / float64(total) * 100
+			}
 		}
 	}
 
@@ -106,7 +119,10 @@ func (h *KnowledgeHandler) Graph(c *gin.Context) {
 	})
 }
 
-// ProblemsForKP returns problems associated with a knowledge point.
+// ProblemsForKP returns problems associated with a knowledge point,
+// split into untried (recommended) and tried sections.
+// Matching is done by tag name: the knowledge point name is used to
+// search problems whose Tags field contains that name (JSON_CONTAINS).
 func (h *KnowledgeHandler) ProblemsForKP(c *gin.Context) {
 	kpID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -114,21 +130,90 @@ func (h *KnowledgeHandler) ProblemsForKP(c *gin.Context) {
 		return
 	}
 
-	var mappings []models.ProblemKnowledgePoint
-	if err := h.DB.Where("knowledge_point_id = ?", kpID).Find(&mappings).Error; err != nil {
-		log.Printf("[knowledge] mapping query for kp=%d failed: %v", kpID, err)
-	}
-	problemIDs := make([]uint64, len(mappings))
-	for i, m := range mappings {
-		problemIDs[i] = m.ProblemID
+	// Get knowledge point name
+	var kp models.KnowledgePoint
+	if err := h.DB.First(&kp, kpID).Error; err != nil {
+		utils.NotFound(c, "知识点不存在")
+		return
 	}
 
+	// Find published problems tagged with this knowledge point name
 	var problems []models.Problem
-	if len(problemIDs) > 0 {
-		if err := h.DB.Where("id IN ? AND status = ?", problemIDs, models.ProblemStatusPublished).Find(&problems).Error; err != nil {
-			log.Printf("[knowledge] problems query for kp=%d failed: %v", kpID, err)
+	h.DB.Where("status = ? AND JSON_CONTAINS(tags, ?)", models.ProblemStatusPublished,
+		fmt.Sprintf(`"%s"`, kp.Name)).Find(&problems)
+
+	// Separate untried (recommended) vs tried
+	uid, _ := middleware.CurrentUserID(c)
+	untried := make([]models.Problem, 0)
+	tried := make([]models.Problem, 0)
+
+	if uid > 0 && len(problems) > 0 {
+		pids := make([]uint64, len(problems))
+		for i, p := range problems { pids[i] = p.ID }
+		var triedPIDs []uint64
+		h.DB.Model(&models.Submission{}).
+			Where("user_id = ? AND problem_id IN ?", uid, pids).
+			Distinct("problem_id").
+			Pluck("problem_id", &triedPIDs)
+		triedIDs := make(map[uint64]bool, len(triedPIDs))
+		for _, pid := range triedPIDs { triedIDs[pid] = true }
+		for _, p := range problems {
+			if triedIDs[p.ID] {
+				tried = append(tried, p)
+			} else {
+				untried = append(untried, p)
+			}
+		}
+	} else {
+		untried = problems
+	}
+
+	utils.OK(c, gin.H{"untried": untried, "tried": tried})
+}
+
+// ProblemsByTags returns problems matching multiple knowledge point names,
+// split into untried and tried. Used by agent-service for AI 题单创建.
+type problemsByTagsReq struct {
+	Tags        []string `json:"tags" binding:"required"`
+	OnlyUntried bool     `json:"onlyUntried"`
+}
+
+func (h *KnowledgeHandler) ProblemsByTags(c *gin.Context) {
+	var req problemsByTagsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数不合法")
+		return
+	}
+	var allProblems []models.Problem
+	seen := make(map[uint64]bool)
+	for _, tag := range req.Tags {
+		var batch []models.Problem
+		h.DB.Where("status = ? AND JSON_CONTAINS(tags, ?)", models.ProblemStatusPublished,
+			fmt.Sprintf(`"%s"`, tag)).Find(&batch)
+		for _, p := range batch {
+			if !seen[p.ID] {
+				seen[p.ID] = true
+				allProblems = append(allProblems, p)
+			}
 		}
 	}
-
-	utils.OK(c, gin.H{"items": problems})
+	untried := make([]models.Problem, 0)
+	tried := make([]models.Problem, 0)
+	uid, _ := middleware.CurrentUserID(c)
+	if uid > 0 && len(allProblems) > 0 {
+		pids := make([]uint64, len(allProblems))
+		for i, p := range allProblems { pids[i] = p.ID }
+		var triedPIDs []uint64
+		h.DB.Model(&models.Submission{}).
+			Where("user_id = ? AND problem_id IN ?", uid, pids).
+			Distinct("problem_id").Pluck("problem_id", &triedPIDs)
+		triedSet := make(map[uint64]bool, len(triedPIDs))
+		for _, pid := range triedPIDs { triedSet[pid] = true }
+		for _, p := range allProblems {
+			if triedSet[p.ID] { tried = append(tried, p) } else { untried = append(untried, p) }
+		}
+	} else {
+		untried = allProblems
+	}
+	utils.OK(c, gin.H{"untried": untried, "tried": tried})
 }

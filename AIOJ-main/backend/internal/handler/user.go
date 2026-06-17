@@ -51,6 +51,34 @@ func (h *UserHandler) RatingHistory(c *gin.Context) {
 	utils.OK(c, gin.H{"history": history})
 }
 
+// Heatmap returns the user's submission activity for the past year (like GitHub contributions).
+func (h *UserHandler) Heatmap(c *gin.Context) {
+	uid, _ := middleware.CurrentUserID(c)
+	if uid == 0 {
+		utils.Unauthorized(c, "请先登录")
+		return
+	}
+
+	type dayCount struct {
+		Date  string
+		Count int
+	}
+	var rows []dayCount
+	h.DB.Raw(`
+		SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS date, COUNT(*) AS count
+		FROM submissions
+		WHERE user_id = ? AND source = 'submit' AND created_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+		GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d')
+		ORDER BY date ASC
+	`, uid).Scan(&rows)
+
+	items := make([]gin.H, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, gin.H{"date": r.Date, "count": r.Count})
+	}
+	utils.OK(c, gin.H{"items": items})
+}
+
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
 	var req updateProfileReq
@@ -279,23 +307,4 @@ func isValidRole(role string) bool {
 	default:
 		return false
 	}
-}
-
-func (h *UserHandler) Heatmap(c *gin.Context) {
-	uid, _ := middleware.CurrentUserID(c)
-	type agg struct {
-		Day   string
-		Count int
-	}
-	var rows []agg
-	h.DB.Raw(`SELECT DATE(CONVERT_TZ(created_at, '+00:00', @@session.time_zone)) AS day, COUNT(*) AS count
-		FROM submissions
-		WHERE user_id = ? AND created_at >= ? AND source = 'submit'
-		GROUP BY day ORDER BY day`,
-		uid, time.Now().AddDate(-1, 0, 0)).Scan(&rows)
-	out := make([]models.DailyCount, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, models.DailyCount{Date: r.Day, Count: r.Count})
-	}
-	utils.OK(c, gin.H{"items": out})
 }

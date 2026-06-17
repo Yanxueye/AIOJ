@@ -50,6 +50,7 @@ func Init(cfg config.MySQLConfig) (*gorm.DB, error) {
 			&models.UserPlanProgressItem{},
 			&models.DailyChallenge{},
 			&models.StudyCheckin{},
+		&models.StudyPlanFavorite{},
 			&models.Submission{},
 			&models.SubmissionCaseResult{},
 			&models.Announcement{},

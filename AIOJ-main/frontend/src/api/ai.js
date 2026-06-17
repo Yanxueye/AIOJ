@@ -11,6 +11,9 @@ export const aiApi = {
   getHistory: () => aiHttp.get('/ai/history'),
   getMessages: id => aiHttp.get(`/ai/conversations/${id}/messages`),
   diagnoseCode: data => aiHttp.post('/ai/code-diagnosis', data),
+  generateSolution: data => aiHttp.post('/ai/generate-solution', data),
   buildKnowledgeGraph: data => aiHttp.post('/ai/knowledge-graph', data),
-  solveProblem: data => aiHttp.post('/ai/solve', data)
+  solveProblem: data => aiHttp.post('/ai/solve', data),
+  createStudyPlan: () => aiHttp.post('/ai/create-study-plan', {}),
+  deleteConversation: id => http.delete(`/ai/conversations/${id}`, { timeout: 10000 })
 }

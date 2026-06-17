@@ -15,12 +15,18 @@ type OpenAIClient struct {
 	apiKey         string
 	model          string
 	embeddingModel string
+	thinkingEnabled bool
 	httpClient     *http.Client
 }
 
 type openaiChatRequest struct {
 	Model    string          `json:"model"`
 	Messages []openaiMessage `json:"messages"`
+	Thinking *thinkingOption `json:"thinking,omitempty"`
+}
+
+type thinkingOption struct {
+	Enabled bool `json:"enabled"`
 }
 
 type openaiMessage struct {
@@ -51,17 +57,18 @@ type openaiEmbeddingResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func NewOpenAIClient(baseURL, apiKey, model, embeddingModel string) *OpenAIClient {
+func NewOpenAIClient(baseURL, apiKey, model, embeddingModel string, thinkingEnabled bool) *OpenAIClient {
 	if embeddingModel == "" {
 		embeddingModel = "text-embedding-3-small"
 	}
 	return &OpenAIClient{
-		baseURL:        baseURL,
-		apiKey:         apiKey,
-		model:          model,
-		embeddingModel: embeddingModel,
+		baseURL:         baseURL,
+		apiKey:          apiKey,
+		model:           model,
+		embeddingModel:  embeddingModel,
+		thinkingEnabled: thinkingEnabled,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 180 * time.Second,
 		},
 	}
 }
@@ -77,6 +84,7 @@ func (c *OpenAIClient) Chat(messages []Message) (string, error) {
 		Model:    c.model,
 		Messages: msgs,
 	}
+	// thinking field is OpenAI-specific; DeepSeek and most compatible APIs reject it
 	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err

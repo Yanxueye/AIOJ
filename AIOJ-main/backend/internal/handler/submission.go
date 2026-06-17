@@ -32,9 +32,14 @@ type submitReq struct {
 }
 
 type runReq struct {
-	Language    string `json:"language" binding:"required"`
-	Code        string `json:"code" binding:"required"`
-	CustomInput string `json:"customInput"`
+	Language   string         `json:"language" binding:"required"`
+	Code       string         `json:"code" binding:"required"`
+	TestCases  []testCaseItem `json:"testCases"`
+}
+
+type testCaseItem struct {
+	Input    string `json:"input"`
+	Expected string `json:"expected"`
 }
 
 
@@ -134,10 +139,18 @@ func (h *SubmissionHandler) Run(c *gin.Context) {
 	}
 
 	traceID := fmt.Sprintf("run-%d-%d", problem.ID, time.Now().UTC().UnixNano())
-	testCase := judger.TestCase{
-		CaseNo:   1,
-		Input:    req.CustomInput,
-		Expected: req.CustomInput,
+
+	// Build test cases from request
+	testCases := make([]judger.TestCase, 0, len(req.TestCases))
+	for i, tc := range req.TestCases {
+		testCases = append(testCases, judger.TestCase{
+			CaseNo:   int32(i + 1),
+			Input:    tc.Input,
+			Expected: tc.Expected,
+		})
+	}
+	if len(testCases) == 0 {
+		testCases = []judger.TestCase{{CaseNo: 1, Input: "", Expected: ""}}
 	}
 
 	resp, err := h.Judger.Judge(c.Request.Context(), &judger.JudgeRequest{
@@ -149,8 +162,7 @@ func (h *SubmissionHandler) Run(c *gin.Context) {
 		TimeLimitMS:   int32(problem.PublishedVersion.TimeLimit),
 		MemoryLimitMB: int32(problem.PublishedVersion.MemoryLimit),
 		OutputLimitKB: problem.PublishedVersion.OutputLimitKB,
-		RunMode:       "run",
-		TestCases:     []judger.TestCase{testCase},
+		TestCases:     testCases,
 	})
 	if err != nil {
 		utils.Server(c, "运行代码失败: "+err.Error())
@@ -170,7 +182,6 @@ func (h *SubmissionHandler) Run(c *gin.Context) {
 		"memoryKb":      resp.MemoryKB,
 		"compileOutput": resp.CompileOut,
 		"errorMessage":  resp.ErrorMessage,
-		"customInput":   req.CustomInput,
 		"caseResults":   buildCaseViews(resp.CaseResults),
 		"stdout":        firstStdout(resp.CaseResults),
 		"stderr":        firstStderr(resp.CaseResults),
