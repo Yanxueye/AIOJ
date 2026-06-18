@@ -30,7 +30,7 @@
             <el-icon><Edit /></el-icon>编辑资料
           </el-button>
           <el-button style="width: 100%; margin-top: 8px; margin-left: 0" round @click="$router.push('/ai')">
-            <el-icon><MagicStick /></el-icon>AI 训练
+            <el-icon><MagicStick /></el-icon>AI 对话
           </el-button>
         </div>
       </div>

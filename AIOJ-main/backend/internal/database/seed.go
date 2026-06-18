@@ -11,12 +11,6 @@ import (
 
 // Seed ensures the database has a minimum set of demo data.
 func Seed(conn *gorm.DB) error {
-	if err := seedKnowledge(conn); err != nil {
-		return err
-	}
-	if err := syncTagsFromKnowledgePoints(conn); err != nil {
-		return err
-	}
 	if err := seedUsers(conn); err != nil {
 		return err
 	}
@@ -40,51 +34,6 @@ func Seed(conn *gorm.DB) error {
 	}
 	if err := seedSubmissions(conn); err != nil {
 		return err
-	}
-	return nil
-}
-
-// syncTagsFromKnowledgePoints ensures AlgorithmTag entries exist for all KnowledgePoint names.
-// KnowledgePoint is the master (has rich metadata: descriptions, colors, icons, URLs).
-// AlgorithmTag mirrors its names for use in problem creation and AI alignment.
-func syncTagsFromKnowledgePoints(conn *gorm.DB) error {
-	var kps []models.KnowledgePoint
-	conn.Find(&kps)
-
-	existingTags := make(map[string]bool)
-	var tags []models.AlgorithmTag
-	conn.Find(&tags)
-	for _, t := range tags {
-		existingTags[t.Name] = true
-	}
-
-	created := 0
-	for _, kp := range kps {
-		if existingTags[kp.Name] {
-			continue
-		}
-		tag := models.AlgorithmTag{
-			Name:     kp.Name,
-			Category: kp.Category,
-			Parent:   "",
-			OrderNo:  0,
-		}
-		// Find parent name
-		if kp.ParentID != nil {
-			var parent models.KnowledgePoint
-			if err := conn.First(&parent, *kp.ParentID).Error; err == nil {
-				tag.Parent = parent.Name
-			}
-		}
-		if err := conn.Create(&tag).Error; err != nil {
-			log.Printf("[seed] warn: failed to create tag for KP %s: %v", kp.Name, err)
-			continue
-		}
-		created++
-	}
-
-	if created > 0 {
-		log.Printf("[seed] synced %d algorithm tags from knowledge points", created)
 	}
 	return nil
 }

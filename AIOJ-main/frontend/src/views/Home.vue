@@ -24,7 +24,7 @@
             <el-icon><Document /></el-icon>开始刷题
           </el-button>
           <el-button size="large" round class="hero-btn-secondary" @click="$router.push('/ai')">
-            <el-icon><MagicStick /></el-icon>AI 训练
+            <el-icon><MagicStick /></el-icon>AI 对话
           </el-button>
         </div>
         <div class="hero-stats">
@@ -88,7 +88,7 @@
               <div class="entry-icon" style="background: var(--accent-gold-bg); color: var(--accent-gold)">
                 <el-icon :size="24"><MagicStick /></el-icon>
               </div>
-              <span class="entry-label">AI 训练</span>
+              <span class="entry-label">AI 对话</span>
             </div>
           </div>
         </div>

@@ -68,6 +68,7 @@ type ChatRequest struct {
 	Message        string          `json:"message"`
 	History        []Message       `json:"history"`
 	Problem        *ProblemContext `json:"problem,omitempty"`
+	ExtraProblems  []ProblemContext `json:"extraProblems,omitempty"`
 	CodeLanguage   string          `json:"codeLanguage,omitempty"`
 	Code           string          `json:"code,omitempty"`
 }
@@ -187,6 +188,37 @@ type pipelineEnvelope struct {
 	Task    string `json:"task"`
 	Model   string `json:"model,omitempty"`
 	Payload any    `json:"payload"`
+}
+
+// UnifiedChatRequest is the request format for the tool-calling agent.
+type UnifiedChatRequest struct {
+	Mode           string          `json:"mode"`
+	UserID         uint64          `json:"user_id"`
+	ConversationID string          `json:"conversation_id,omitempty"`
+	Messages       []Message       `json:"messages"`
+	Problem        *ProblemContext `json:"problem,omitempty"`
+	ExtraProblems  []ProblemContext `json:"extraProblems,omitempty"`
+	Code           string          `json:"code,omitempty"`
+	Language       string          `json:"language,omitempty"`
+}
+
+// UnifiedChatResponse is from the unified chat endpoint.
+type UnifiedChatResponse struct {
+	Reply       string `json:"reply"`
+	RawMarkdown string `json:"rawMarkdown,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	RoundsUsed  int    `json:"roundsUsed,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+}
+
+// ChatUnified sends a unified chat request to the agent-service.
+func (c *Client) ChatUnified(ctx context.Context, req UnifiedChatRequest) (*UnifiedChatResponse, error) {
+	var resp UnifiedChatResponse
+	if err := c.post(ctx, req.Mode, "/chat", req, &resp); err != nil {
+		return nil, err
+	}
+	withProvider(&resp.Provider)
+	return &resp, nil
 }
 
 func NewClient(cfg config.AIConfig) *Client {

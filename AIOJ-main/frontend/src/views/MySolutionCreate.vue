@@ -76,13 +76,12 @@ async function generateAISolution() {
       }
     } catch { /* ignore */ }
 
-    const res = await aiApi.generateSolution({
-      problemId: form.problemId,
-      language,
-      code
-    })
-    const data = res.data
-    const content = data?.content || data?.rawMarkdown || ''
+    const res = await aiApi.chat({ mode: 'generate-solution', problemId: form.problemId, language, code })
+    let data = res.data
+    if (data?.reply) {
+      try { const parsed = JSON.parse(data.reply); data = { ...data, ...parsed } } catch {}
+    }
+    const content = data?.content || data?.rawMarkdown || data?.reply || ''
     if (content) {
       form.content = content
       if (!form.title && data?.title) {

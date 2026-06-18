@@ -91,12 +91,12 @@ async function regenerateAI() {
   if (!form.problemId) return
   aiLoading.value = true
   try {
-    const res = await aiApi.solveProblem({
+    const res = await aiApi.chat({ mode: 'solve',
       problemId: form.problemId,
       question: '请帮我生成一篇题解，包含：1) 解题思路概述 2) 踩坑点 3) 实现亮点 4) 关键公式/算法 5) 时间/空间复杂度。用Markdown格式输出。',
       level: 'full'
     })
-    const answer = res.data?.answer || ''
+    const answer = res.data?.reply || res.data?.answer || ''
     if (answer) {
       form.content = answer
       ElMessage.success('AI 题解已生成，请检查后保存')

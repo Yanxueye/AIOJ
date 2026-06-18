@@ -110,7 +110,7 @@ func (h *ProblemHandler) validateTags(tags []string) error {
 		return nil
 	}
 	var validNames []string
-	h.DB.Model(&models.AlgorithmTag{}).Pluck("name", &validNames)
+		// AlgorithmTag removed — tags stored in Problem.Tags JSON
 	validSet := make(map[string]bool, len(validNames))
 	for _, n := range validNames { validSet[n] = true }
 	for _, t := range tags {
@@ -997,7 +997,7 @@ func (h *ProblemHandler) Delete(c *gin.Context) {
 		// Clean up favorites
 		tx.Where("problem_id = ?", p.ID).Delete(&models.Favorite{})
 		// Clean up knowledge point mappings
-		tx.Where("problem_id = ?", p.ID).Delete(&models.ProblemKnowledgePoint{})
+		// Problem-knowledge-point mapping no longer used (tags stored in Problem.Tags JSON)
 		return tx.Delete(p).Error
 	}); err != nil {
 		utils.Server(c, err.Error())

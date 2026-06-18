@@ -24,6 +24,9 @@ type Config struct {
 
 	// Thinking mode (set to "true" to enable LLM thinking/reasoning, default false for speed)
 	AIThinking bool
+
+	// OJ backend URL for tool execution
+	OJBaseURL string
 }
 
 func Load() Config {
@@ -41,6 +44,7 @@ func Load() Config {
 		OllamaModel:    getEnv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
 		EmbeddingModel: getEnv("EMBEDDING_MODEL", "nomic-embed-text:latest"),
 		AIThinking:     strings.EqualFold(getEnv("AI_THINKING", "false"), "true"),
+		OJBaseURL:      getEnv("OJ_BASE_URL", "http://127.0.0.1:8080"),
 	}
 }
 

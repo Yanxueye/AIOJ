@@ -56,12 +56,9 @@ func Init(cfg config.MySQLConfig) (*gorm.DB, error) {
 			&models.Announcement{},
 			&models.Conversation{},
 			&models.Message{},
-			&models.KnowledgePoint{},
-			&models.ProblemKnowledgePoint{},
 			&models.UserKnowledgeMastery{},
 			&models.RatingHistory{},
-			&models.AlgorithmTag{},
-			&models.UserKnowledgeGraph{},
+			
 		); err != nil {
 			return nil, fmt.Errorf("auto migrate: %w", err)
 		}

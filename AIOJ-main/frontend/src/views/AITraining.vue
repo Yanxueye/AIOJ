@@ -15,11 +15,21 @@
           :class="{ active: conv.id === aiStore.currentConversationId }"
           @click="switchConversation(conv.id)"
         >
-          <div class="history-title">{{ conv.title || '新对话' }}</div>
-          <div class="history-meta">
-            <span class="history-time">{{ formatTime(conv.createdAt) }}</span>
-            <span class="history-count">{{ conv.messageCount || 0 }} 条消息</span>
+          <div class="history-item-main">
+            <div class="history-title">{{ conv.title || '新对话' }}</div>
+            <div class="history-meta">
+              <span class="history-time">{{ formatTime(conv.createdAt) }}</span>
+              <span class="history-count">{{ conv.messageCount || 0 }} 条消息</span>
+            </div>
           </div>
+          <el-button
+            class="history-delete-btn"
+            text
+            size="small"
+            :icon="Delete"
+            type="danger"
+            @click.stop="handleDelete(conv.id)"
+          />
         </div>
         <el-empty v-if="!aiStore.conversations.length" description="暂无记录" :image-size="40" />
       </div>
@@ -34,19 +44,31 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useAIStore } from '@/stores/ai'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete } from '@element-plus/icons-vue'
 import AIChat from '@/components/AIChat.vue'
 
 const aiStore = useAIStore()
 const historyLoading = ref(false)
 
-function handleNewChat() {
+async function handleNewChat() {
   aiStore.startNewConversation()
+  historyLoading.value = true
+  try { await aiStore.loadHistory() } catch {} finally { historyLoading.value = false }
 }
 
 async function switchConversation(id) {
   historyLoading.value = true
   try { await aiStore.loadMessages(id) } catch {}
   finally { historyLoading.value = false }
+}
+
+async function handleDelete(id) {
+  try {
+    await ElMessageBox.confirm('确定删除该对话？', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+    await aiStore.deleteConversation(id)
+    ElMessage.success('已删除')
+  } catch { /* cancelled */ }
 }
 
 function formatTime(t) {
@@ -104,15 +126,17 @@ onMounted(async () => {
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
-  position: relative;
-  flex-wrap: wrap;
+  gap: 6px;
 }
 .history-item:hover { background: var(--bg-warm, rgba(0,0,0,0.03)) }
 .history-item.active { background: var(--accent-primary-bg, rgba(99,102,241,0.08)) }
+.history-item-main {
+  flex: 1;
+  min-width: 0;
+}
 .history-title {
   font-size: 13px;
   font-weight: 500;
-  width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -123,7 +147,14 @@ onMounted(async () => {
   gap: 12px;
   font-size: 11px;
   color: var(--text-muted);
-  width: 100%;
+}
+.history-delete-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.history-item:hover .history-delete-btn {
+  opacity: 1;
 }
 
 .training-main {

@@ -4,17 +4,8 @@
       <div class="chat-title">
         <el-icon><MagicStick /></el-icon>
         <span>AI 助手</span>
-        <el-tag v-if="problemContext" size="small" type="info" closable @close="$emit('clear-context')">
-          #{{ problemContext.id }}
-        </el-tag>
       </div>
       <div class="chat-actions">
-        <el-button v-if="problemContext" text size="small" :disabled="aiStore.loading" @click="handleHint">
-          解题提示
-        </el-button>
-        <el-button v-if="problemContext" text size="small" :disabled="aiStore.loading" @click="handleDiagnose">
-          诊断代码
-        </el-button>
         <el-button text size="small" @click="toggleHistory">
           <el-icon><Clock /></el-icon>
         </el-button>
@@ -76,31 +67,78 @@
       </div>
     </div>
 
-    <div class="chat-input">
-      <el-input
-        v-model="inputText"
-        type="textarea"
-        :autosize="{ minRows: 1, maxRows: 4 }"
-        placeholder="输入你的问题... (Enter 发送, Shift+Enter 换行)"
-        resize="none"
-        @keydown.enter.exact.prevent="handleSend"
-      />
-      <el-button
-        type="primary"
-        :icon="Promotion"
-        circle
-        :disabled="!inputText.trim() || aiStore.loading"
-        @click="handleSend"
-      />
+    <!-- Attached problem tags -->
+    <div v-if="attachedProblems.length" class="attached-row">
+      <div
+        v-for="p in attachedProblems"
+        :key="p.id"
+        class="attached-tag"
+      >
+        <span class="attached-tag-id">#{{ p.id }}</span>
+        <span class="attached-tag-title">{{ p.title }}</span>
+        <el-icon class="attached-tag-close" :size="14" @click="removeProblem(p.id)"><Close /></el-icon>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="chat-input-area">
+      <div class="chat-input">
+        <el-popover
+          v-model:visible="showProblemPop"
+          placement="top-start"
+          :width="280"
+          trigger="manual"
+          :hide-after="0"
+        >
+          <template #reference>
+            <el-button
+              class="attach-btn"
+              :icon="CirclePlus"
+              circle
+              :disabled="attachedProblems.length >= 3"
+              @click="showProblemPop = true"
+            />
+          </template>
+          <div class="pop-input">
+            <el-input
+              v-model="problemInput"
+              placeholder="输入题号，如 1001"
+              size="small"
+              @keyup.enter="addProblem"
+            >
+              <template #append>
+                <el-button :loading="problemLoading" @click="addProblem">关联</el-button>
+              </template>
+            </el-input>
+            <div v-if="attachedProblems.length >= 3" class="pop-hint">最多关联 3 道题目</div>
+          </div>
+        </el-popover>
+        <el-input
+          v-model="inputText"
+          type="textarea"
+          :autosize="{ minRows: 1, maxRows: 4 }"
+          placeholder="输入你的问题... (Enter 发送, Shift+Enter 换行)"
+          resize="none"
+          @keydown.enter.exact.prevent="handleSend"
+        />
+        <el-button
+          type="primary"
+          :icon="Promotion"
+          circle
+          :disabled="!inputText.trim() || aiStore.loading"
+          @click="handleSend"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue'
-import { Promotion } from '@element-plus/icons-vue'
+import { Promotion, CirclePlus, Close } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAIStore } from '@/stores/ai'
+import http from '@/api/index'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 
 const props = defineProps({
@@ -108,16 +146,19 @@ const props = defineProps({
   codeContext: { type: Object, default: null }
 })
 
-defineEmits(['clear-context'])
-
 const aiStore = useAIStore()
 const inputText = ref('')
 const messagesRef = ref(null)
 const showHistory = ref(false)
 
+// Problem attachment
+const attachedProblems = ref([])  // [{id, title, tags}]
+const showProblemPop = ref(false)
+const problemInput = ref('')
+const problemLoading = ref(false)
+
 const messages = computed(() => aiStore.currentMessages)
 const visibleMessages = computed(() => messages.value.filter(m => m.role !== 'system'))
-const canDiagnose = computed(() => Boolean(props.problemContext?.id && props.codeContext?.code?.trim()))
 
 function scrollToBottom() {
   nextTick(() => {
@@ -129,17 +170,60 @@ function scrollToBottom() {
 
 watch(() => messages.value.length, scrollToBottom)
 
+async function addProblem() {
+  const id = parseInt(problemInput.value.trim(), 10)
+  if (!id) return
+  if (attachedProblems.value.length >= 3) {
+    ElMessage.warning('最多关联 3 道题目')
+    return
+  }
+  if (attachedProblems.value.find(p => p.id === id)) {
+    ElMessage.warning('已关联此题')
+    return
+  }
+  problemLoading.value = true
+  try {
+    const r = await http.get(`/problems/${id}`)
+    const p = r.data
+    if (p?.id) {
+      attachedProblems.value.push({
+        id: p.id,
+        title: p.title,
+        tags: p.tags || [],
+      })
+      problemInput.value = ''
+      showProblemPop.value = false
+    } else {
+      ElMessage.error('题目不存在')
+    }
+  } catch {
+    ElMessage.error('题目不存在')
+  } finally {
+    problemLoading.value = false
+  }
+}
+
+function removeProblem(id) {
+  attachedProblems.value = attachedProblems.value.filter(p => p.id !== id)
+}
+
 async function handleSend() {
   const text = inputText.value.trim()
   if (!text || aiStore.loading) return
   inputText.value = ''
   scrollToBottom()
-  await aiStore.sendMessage(text, props.problemContext)
+  const ctx = {
+    problem: props.problemContext,
+    attachedProblems: attachedProblems.value.map(p => p.id),
+    code: props.codeContext,
+  }
+  await aiStore.sendMessage(text, ctx)
   scrollToBottom()
 }
 
 function handleClear() {
   aiStore.clearMessages()
+  attachedProblems.value = []
 }
 
 async function toggleHistory() {
@@ -154,33 +238,6 @@ async function loadConversation(convId) {
   showHistory.value = false
   scrollToBottom()
 }
-
-async function handleHint() {
-  if (!props.problemContext?.id || aiStore.loading) return
-  try {
-    await aiStore.solveProblem({ problemId: props.problemContext.id, level: 'hint' })
-  } catch {
-    return
-  }
-  scrollToBottom()
-}
-
-async function handleDiagnose() {
-  if (!canDiagnose.value) {
-    ElMessage.warning('请先输入代码')
-    return
-  }
-  try {
-    await aiStore.diagnoseCode({
-      problemId: props.problemContext.id,
-      language: props.codeContext.language || 'cpp',
-      code: props.codeContext.code
-    })
-  } catch {
-    return
-  }
-  scrollToBottom()
-}
 </script>
 
 <style scoped>
@@ -191,6 +248,7 @@ async function handleDiagnose() {
   background: var(--bg-hover);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
+  position: relative;
 }
 .chat-header {
   display: flex;
@@ -199,6 +257,7 @@ async function handleDiagnose() {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-card);
+  flex-shrink: 0;
 }
 .chat-title {
   display: flex;
@@ -229,9 +288,7 @@ async function handleDiagnose() {
   gap: 12px;
   color: var(--text-muted);
 }
-.chat-empty p {
-  font-size: 14px;
-}
+.chat-empty p { font-size: 14px; }
 .message {
   display: flex;
   gap: 10px;
@@ -260,27 +317,79 @@ async function handleDiagnose() {
   line-height: 1.6;
   white-space: pre-wrap;
 }
+
+/* Attached problem tags */
+.attached-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px 0;
+  border-top: 1px solid var(--border-color);
+}
+.attached-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--accent-primary-bg, rgba(99,102,241,0.1));
+  border: 1px solid var(--accent-primary, rgba(99,102,241,0.3));
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: default;
+}
+.attached-tag-id {
+  font-weight: 700;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+}
+.attached-tag-title {
+  color: var(--text-secondary);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attached-tag-close {
+  cursor: pointer;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.attached-tag-close:hover { color: var(--accent-red); }
+
+/* Input area */
+.chat-input-area {
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
 .chat-input {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-card);
+  padding: 10px 16px 12px;
 }
 .chat-input :deep(.el-textarea__inner) {
   box-shadow: none;
   border-radius: var(--radius-sm);
 }
+.attach-btn {
+  flex-shrink: 0;
+}
+.pop-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pop-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
 
 .typing-indicator {
-  display: flex;
-  gap: 4px;
-  padding: 4px 0;
+  display: flex; gap: 4px; padding: 4px 0;
 }
 .typing-indicator span {
-  width: 8px;
-  height: 8px;
+  width: 8px; height: 8px;
   background: var(--accent-gold);
   border-radius: 50%;
   animation: typing 1.4s ease-in-out infinite;
@@ -295,10 +404,7 @@ async function handleDiagnose() {
 /* History Panel */
 .chat-history-panel {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   background: var(--bg-card);
   z-index: 10;
   display: flex;
@@ -322,32 +428,16 @@ async function handleDiagnose() {
   color: var(--text-muted);
   font-size: 13px;
 }
-.history-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-}
+.history-list { flex: 1; overflow-y: auto; padding: 8px; }
 .history-item {
-  padding: 10px 12px;
-  border-radius: 6px;
-  cursor: pointer;
+  padding: 10px 12px; border-radius: 6px; cursor: pointer;
   transition: background 0.15s;
 }
 .history-item:hover { background: var(--bg-hover); }
 .history-item.active { background: var(--accent-primary-bg); }
 .history-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.history-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.ai-chat { position: relative; }
+.history-meta { font-size: 11px; color: var(--text-muted); }
 </style>

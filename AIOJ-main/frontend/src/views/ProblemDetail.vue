@@ -867,8 +867,12 @@ async function fetchAIAnalysis() {
       runtimeMs: rv.runtimeMs ?? rv.runtime ?? 0,
       memoryKb: rv.memoryKb ?? 0
     }
-    const res = await aiApi.diagnoseCode(payload)
-    aiAnalysis.value = res.data
+    const res = await aiApi.chat({ mode: 'code-diagnosis', ...payload })
+    let data = res.data
+    if (data?.reply) {
+      try { const p = JSON.parse(data.reply); data = { ...p, rawMarkdown: data.rawMarkdown || data.reply } } catch {}
+    }
+    aiAnalysis.value = data
     nextTick(() => initComplexityCharts())
   } catch {
     aiAnalysis.value = { rawMarkdown: 'AI 分析暂时不可用' }
@@ -883,7 +887,7 @@ async function sendChat() {
   scrollChatToBottom()
   const codeCtx = code.value ? { language: language.value, code: code.value } : null
   try {
-    await aiStore.sendMessage(msg, problem.value, codeCtx)
+    await aiStore.sendMessage(msg, { problem: problem.value, code: codeCtx })
   } catch {}
   finally { scrollChatToBottom() }
 }
@@ -893,7 +897,7 @@ async function sendCodeContext() {
   chatInput.value = ''
   scrollChatToBottom()
   try {
-    await aiStore.sendMessage(msg, problem.value, { language: language.value, code: code.value })
+    await aiStore.sendMessage(msg, { problem: problem.value, code: { language: language.value, code: code.value } })
   } catch {}
   finally { scrollChatToBottom() }
 }

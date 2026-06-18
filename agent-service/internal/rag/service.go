@@ -60,8 +60,8 @@ type Service struct {
 func NewService() *Service {
 	return &Service{
 		splitter: textsplitter.NewRecursiveCharacter(
-			textsplitter.WithChunkSize(1000),
-			textsplitter.WithChunkOverlap(200),
+			textsplitter.WithChunkSize(1500),
+			textsplitter.WithChunkOverlap(300),
 		),
 	}
 }
@@ -89,10 +89,13 @@ func (s *Service) LoadFromDirectory(dir string) error {
 	)
 
 	ctx := context.Background()
-	docs, err := loader.LoadAndSplit(ctx, s.splitter)
+	rawDocs, err := loader.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("load documents: %w", err)
 	}
+	// Split by ## headings (keep section+content together)
+	docs := splitByHeadings(rawDocs, 2000)
+	log.Printf("[rag] split %d raw docs into %d chunks by headings", len(rawDocs), len(docs))
 
 	// Enrich metadata from YAML front matter
 	for i := range docs {
@@ -100,6 +103,28 @@ func (s *Service) LoadFromDirectory(dir string) error {
 			docs[i].Metadata = make(map[string]any)
 		}
 		extractFrontMatter(&docs[i])
+		// Derive search tags from front matter (title + category)
+		tags := []string{}
+		title := ""
+		category := ""
+		if t, ok := docs[i].Metadata["title"].(string); ok && t != "" {
+			tags = append(tags, t)
+			title = t
+		}
+		if c, ok := docs[i].Metadata["category"].(string); ok && c != "" {
+			tags = append(tags, c)
+			category = c
+		}
+		if len(tags) > 0 {
+			docs[i].Metadata["tags"] = tags
+		}
+		// Prefix chunk content with document context so LLM understands what topic it belongs to
+		prefix := ""
+		if title != "" { prefix += "[" + title + "]" }
+		if category != "" { prefix += " [" + category + "]" }
+		if prefix != "" {
+			docs[i].PageContent = prefix + "\n" + docs[i].PageContent
+		}
 	}
 
 	// Load embedding cache from disk
@@ -223,8 +248,13 @@ func (s *Service) indexDocumentsCached(docs []schema.Document, cache embeddingCa
 	return nil
 }
 
-// Search performs hybrid search: embedding similarity + keyword matching
+// Search performs hybrid search: embedding similarity + keyword matching + tag boost.
+// Results are deduplicated by content hash to avoid duplicate chunks.
 func (s *Service) Search(query string, topK int) []SearchResult {
+	return s.searchWithBoost(query, topK, nil)
+}
+
+func (s *Service) searchWithBoost(query string, topK int, boostTags []string) []SearchResult {
 	if !s.initialized || len(s.documents) == 0 {
 		return nil
 	}
@@ -235,6 +265,7 @@ func (s *Service) Search(query string, topK int) []SearchResult {
 	}
 
 	var results []scored
+	seen := make(map[string]bool) // dedup by content hash
 
 	// Try embedding-based search first
 	if s.embedder != nil {
@@ -245,7 +276,16 @@ func (s *Service) Search(query string, topK int) []SearchResult {
 				if len(doc.Embedding) > 0 {
 					sim := cosineSimilarity(queryEmb[0], doc.Embedding)
 					if sim > 0.1 { // threshold
-						results = append(results, scored{doc: doc, score: float64(sim)})
+						h := contentHash(doc.Doc.PageContent)
+						if seen[h] {
+							continue
+						}
+						seen[h] = true
+						score := float64(sim)
+						if tagMatchBoost(boostTags, doc.Doc.Metadata) {
+							score *= 3.0
+						}
+						results = append(results, scored{doc: doc, score: score})
 					}
 				}
 			}
@@ -266,6 +306,14 @@ func (s *Service) Search(query string, topK int) []SearchResult {
 				}
 			}
 			if score > 0 {
+				h := contentHash(doc.Doc.PageContent)
+				if seen[h] {
+					continue
+				}
+				seen[h] = true
+				if tagMatchBoost(boostTags, doc.Doc.Metadata) {
+					score *= 3.0
+				}
 				results = append(results, scored{doc: doc, score: score / float64(len(words))})
 			}
 		}
@@ -298,9 +346,88 @@ func (s *Service) Search(query string, topK int) []SearchResult {
 	return searchResults
 }
 
-// BuildContext builds a context string from search results for injection into AI prompts
+// SearchMulti performs multiple searches and returns deduplicated merged results.
+func (s *Service) SearchMulti(queries []string, topK int) []SearchResult {
+	if len(queries) == 0 {
+		return nil
+	}
+	if len(queries) == 1 {
+		return s.Search(queries[0], topK)
+	}
+
+	type scored struct {
+		doc   DocumentWithEmbedding
+		score float64
+	}
+	merged := make(map[string]*scored) // contentHash -> result
+
+	for _, q := range queries {
+		q = strings.TrimSpace(q)
+		if q == "" {
+			continue
+		}
+		results := s.Search(q, topK*2)
+		for _, r := range results {
+			h := contentHash(r.Document.Content)
+			if existing, ok := merged[h]; ok {
+				if r.Similarity > existing.score {
+					existing.score = r.Similarity
+				}
+			} else {
+				for _, doc := range s.documents {
+					if contentHash(doc.Doc.PageContent) == h {
+						merged[h] = &scored{doc: doc, score: r.Similarity}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	var results []scored
+	for _, v := range merged {
+		results = append(results, *v)
+	}
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[j].score > results[i].score {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
+	if topK > len(results) {
+		topK = len(results)
+	}
+
+	searchResults := make([]SearchResult, topK)
+	for i := 0; i < topK; i++ {
+		searchResults[i] = SearchResult{
+			Document: Document{
+				ID:       fmt.Sprintf("%v", results[i].doc.Doc.Metadata["id"]),
+				Content:  results[i].doc.Doc.PageContent,
+				Metadata: toStringMap(results[i].doc.Doc.Metadata),
+			},
+			Similarity: results[i].score,
+		}
+	}
+	return searchResults
+}
+
+// BuildContext searches and builds context (maxLen=0 means no limit).
 func (s *Service) BuildContext(query string, maxLen int) string {
 	results := s.Search(query, 5)
+	if len(results) == 0 {
+		return ""
+	}
+	return BuildContext(results, maxLen)
+}
+
+// BuildContextMulti searches using multiple queries, merges deduplicated results.
+func (s *Service) BuildContextMulti(queries []string, maxLen, topK int) string {
+	if len(queries) == 0 {
+		return ""
+	}
+	results := s.SearchMulti(queries, topK)
 	if len(results) == 0 {
 		return ""
 	}
@@ -318,6 +445,106 @@ func (s *Service) BuildCodeContext(code string, language string, maxLen int) str
 	sb.WriteString("以下是从 OI-Wiki 检索到的相关知识：\n\n")
 	sb.WriteString(BuildContext(results, maxLen))
 	return sb.String()
+}
+
+// splitByHeadings splits documents by ## headings, keeping sections intact.
+// Sections larger than maxLen are further split at paragraph boundaries.
+func splitByHeadings(docs []schema.Document, maxLen int) []schema.Document {
+	var result []schema.Document
+	for _, doc := range docs {
+		sections := splitByMarker(doc.PageContent, "\n## ", maxLen)
+		for _, sec := range sections {
+			newDoc := schema.Document{
+				PageContent: sec,
+				Metadata:    make(map[string]any),
+			}
+			for k, v := range doc.Metadata {
+				newDoc.Metadata[k] = v
+			}
+			result = append(result, newDoc)
+		}
+	}
+	return result
+}
+
+func splitByMarker(content, marker string, maxLen int) []string {
+	// Split on marker boundaries
+	parts := strings.Split(content, marker)
+	if len(parts) <= 1 {
+		// No marker found, try to split long content at paragraphs
+		if len(content) <= maxLen {
+			return []string{content}
+		}
+		return splitPara(content, maxLen)
+	}
+
+	var result []string
+	var current strings.Builder
+	for i, part := range parts {
+		prefix := ""
+		if i > 0 {
+			prefix = marker
+		}
+		chunk := prefix + part
+		// If this section is small enough, accumulate
+		if current.Len()+len(chunk) <= maxLen {
+			current.WriteString(chunk)
+		} else {
+			// Flush previous accumulator
+			if current.Len() > 0 {
+				result = append(result, current.String())
+				current.Reset()
+			}
+			// If this section alone fits, start new accumulator
+			if len(chunk) <= maxLen {
+				current.WriteString(chunk)
+			} else {
+				// Section too big, split at paragraphs
+				subs := splitPara(chunk, maxLen)
+				result = append(result, subs[:len(subs)-1]...)
+				current.WriteString(subs[len(subs)-1])
+			}
+		}
+	}
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+	return result
+}
+
+func splitPara(content string, maxLen int) []string {
+	if len(content) <= maxLen {
+		return []string{content}
+	}
+	// Split on double newline (paragraph boundary)
+	paras := strings.Split(content, "\n\n")
+	var result []string
+	var current strings.Builder
+	for _, para := range paras {
+		if current.Len()+len(para) <= maxLen {
+			if current.Len() > 0 { current.WriteString("\n\n") }
+			current.WriteString(para)
+		} else {
+			if current.Len() > 0 {
+				result = append(result, current.String())
+				current.Reset()
+			}
+			if len(para) <= maxLen {
+				current.WriteString(para)
+			} else {
+				// Para still too big, hard split
+				for i := 0; i < len(para); i += maxLen {
+					end := i + maxLen
+					if end > len(para) { end = len(para) }
+					result = append(result, para[i:end])
+				}
+			}
+		}
+	}
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+	return result
 }
 
 // IsInitialized returns whether the RAG service has been initialized
@@ -395,4 +622,47 @@ func toStringMap(m map[string]any) map[string]string {
 		}
 	}
 	return result
+}
+
+// tagMatchBoost returns true if any boostTag matches a tag in the document metadata.
+func tagMatchBoost(boostTags []string, metadata map[string]any) bool {
+	if len(boostTags) == 0 { return false }
+	docTags, _ := metadata["tags"].([]string)
+	for _, bt := range boostTags {
+		for _, dt := range docTags {
+			if strings.Contains(strings.ToLower(dt), strings.ToLower(bt)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// BuildContextTagged searches with tag boosting for better relevance.
+func (s *Service) BuildContextTagged(queries []string, tags []string, maxLen, topK int) string {
+	if len(queries) == 0 { return "" }
+	var allResults []SearchResult
+	seen := make(map[string]bool)
+	for _, q := range queries {
+		q = strings.TrimSpace(q)
+		if q == "" { continue }
+		results := s.searchWithBoost(q, topK*2, tags)
+		for _, r := range results {
+			h := contentHash(r.Document.Content)
+			if seen[h] { continue }
+			seen[h] = true
+			allResults = append(allResults, r)
+		}
+	}
+	// Sort by similarity descending
+	for i := 0; i < len(allResults); i++ {
+		for j := i + 1; j < len(allResults); j++ {
+			if allResults[j].Similarity > allResults[i].Similarity {
+				allResults[i], allResults[j] = allResults[j], allResults[i]
+			}
+		}
+	}
+	if topK < len(allResults) { allResults = allResults[:topK] }
+	if len(allResults) == 0 { return "" }
+	return BuildContext(allResults, maxLen)
 }

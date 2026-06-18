@@ -50,7 +50,7 @@ func main() {
 		}
 	}()
 
-	h := handler.New(aiClient, ragService)
+	h := handler.New(aiClient, ragService, cfg.OJBaseURL)
 
 	r := gin.Default()
 

@@ -210,9 +210,13 @@ All backend APIs are under `/api`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/ai/chat` | AI chat |
+| POST | `/api/ai/chat` | AI chat (unified, supports mode + tool calling) |
 | POST | `/api/ai/code-diagnosis` | AI code diagnosis |
+| POST | `/api/ai/generate-solution` | AI solution generation |
 | POST | `/api/ai/knowledge-graph` | AI learning graph |
+| POST | `/api/ai/create-study-plan` | AI study plan creation |
+| POST | `/api/ai/solve` | AI guided solving (hint/explain/full) |
+| GET | `/api/ai/history` | Conversation history |
 
 > See [backend/API.md](backend/API.md) for detailed request/response formats.
 

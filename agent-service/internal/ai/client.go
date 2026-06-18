@@ -1,13 +1,16 @@
 package ai
 
 import (
+	"encoding/json"
 	"log"
 )
 
-// Message represents a chat message
+// Message represents a chat message.
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role          string          `json:"role"`
+	Content       string          `json:"content,omitempty"`
+	ToolCallID    string          `json:"tool_call_id,omitempty"`
+	ToolCallsJSON json.RawMessage `json:"tool_calls,omitempty"`
 }
 
 // Client is a unified AI client that tries OpenAI-compatible API first, falls back to Ollama
@@ -79,6 +82,43 @@ func (c *Client) Chat(messages []Message) (string, error) {
 	}
 	log.Printf("[ai] Chat failed — no provider available (primary=%v, fallback=%v)", c.primary != nil, c.fallback != nil)
 	return "", ErrNoProvider
+}
+
+// ChatWithTools sends a chat completion request with tool definitions and returns
+// either text content, tool calls, or both.
+// Ollama fallback does not support tools — if Ollama is the only provider, tools are dropped.
+func (c *Client) ChatWithTools(messages []Message, tools []ToolDefinition, toolChoice string) (*ChatWithToolsResult, error) {
+	// If primary (OpenAI-compatible) is available, use it
+	if c.primary != nil {
+		resp, err := c.primary.ChatWithTools(messages, tools, toolChoice)
+		if err == nil {
+			return resp, nil
+		}
+		log.Printf("[ai] primary ChatWithTools failed: %v", err)
+		// Fall through to fallback
+	}
+
+	// Fallback to Ollama without tools
+	if c.fallback != nil {
+		text, err := c.fallback.Chat(messages)
+		if err != nil {
+			return nil, err
+		}
+		return &ChatWithToolsResult{Content: text}, nil
+	}
+
+	return nil, ErrNoProvider
+}
+
+// ProviderName returns the name of the currently active provider.
+func (c *Client) ProviderName() string {
+	if c.primary != nil {
+		return "agent-service"
+	}
+	if c.fallback != nil {
+		return "ollama"
+	}
+	return "unavailable"
 }
 
 // Embedding generates an embedding vector.

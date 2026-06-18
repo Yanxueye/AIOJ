@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	aisvc "github.com/terminaloj/backend/internal/ai"
 	"github.com/terminaloj/backend/internal/config"
@@ -28,7 +29,7 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 	audit := &AuditHandler{DB: db}
 	knowledge := &KnowledgeHandler{DB: db}
 	recommendation := &RecommendationHandler{DB: db}
-	tag := &TagHandler{DB: db}
+	tag := &TagHandler{}
 
 	r.GET("/healthz", func(c *gin.Context) { utils.OK(c, gin.H{"status": "ok"}) })
 
@@ -54,6 +55,23 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		// Algorithm tags — public, used for problem creation and AI alignment.
 		api.GET("/tags", tag.List)
 		api.GET("/tags/names", tag.Names)
+	}
+	// Agent internal API (called by agent-service, auth via X-User-ID, no JWT required)
+	agentAuth := func(c *gin.Context) {
+		if uid := c.GetHeader("X-User-ID"); uid != "" {
+			var id uint64
+			if _, err := fmt.Sscanf(uid, "%d", &id); err == nil {
+				c.Set("x-user-id", id)
+			}
+		}
+		c.Next()
+	}
+	agentGroup := r.Group("/api", agentAuth)
+	{
+		agentGroup.POST("/agent/problems", ai.QueryUserProblems)
+		agentGroup.POST("/agent/judge", ai.SubmitAndJudge)
+		agentGroup.POST("/agent/code", ai.GetUserCode)
+		agentGroup.POST("/agent/search-problems", ai.SearchProblems)
 	}
 
 	authed := r.Group("/api", middleware.JWTAuth(jwt))
@@ -103,6 +121,7 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		authed.GET("/submissions/:id/cases", submission.Cases)
 		authed.GET("/submissions/:id/output", submission.Output)
 
+
 		aiRateLimit := middleware.PerUserRateLimit(10, 3)
 		authed.POST("/ai/chat", aiRateLimit, ai.Chat)
 		authed.GET("/ai/history", ai.History)
@@ -111,7 +130,6 @@ func BuildRouter(db *gorm.DB, broker *mq.Broker, jdClient judger.JudgerClient, j
 		authed.POST("/ai/code-diagnosis", aiRateLimit, ai.CodeDiagnosis)
 		authed.POST("/ai/generate-solution", aiRateLimit, ai.GenerateSolution)
 		authed.POST("/ai/knowledge-graph", aiRateLimit, ai.KnowledgeGraph)
-		authed.POST("/ai/create-study-plan", aiRateLimit, ai.CreateStudyPlan)
 		authed.POST("/ai/solve", aiRateLimit, ai.Solve)
 	}
 	return r

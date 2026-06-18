@@ -141,12 +141,14 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import http from '@/api/index'
 import { aiApi } from '@/api/ai'
 import { ElMessage } from 'element-plus'
 import { Close, InfoFilled, MagicStick, Link } from '@element-plus/icons-vue'
 
+  const router = useRouter()
 const loading = ref(true)
 const aiLoading = ref(false)
 const planLoading = ref(false)
@@ -319,8 +321,20 @@ async function loadProblems(id) {
 async function generateAIGraph() {
   aiLoading.value = true
   try {
-    const r = await aiApi.buildKnowledgeGraph({ scope: 'recent' })
-    const d = r.data
+    const r = await aiApi.chat({ mode: 'knowledge-graph', message: '分析我的学习情况' })
+    let d = r.data
+    // Try to parse structured data from reply JSON (strip markdown fences)
+    if (d?.reply) {
+      try {
+        let json = d.reply
+        const md = json.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+        if (md) json = md[1]
+        const parsed = JSON.parse(json)
+        if (parsed.nodes || parsed.suggestions) {
+          d = parsed
+        }
+      } catch {}
+    }
     if (d?.nodes?.length || d?.suggestions?.length) {
       const strengths = [], weaknesses = [], highlightMap = new Map()
       d.nodes.forEach(n => {
@@ -353,12 +367,22 @@ async function generateAIGraph() {
 async function generateStudyPlan() {
   planLoading.value = true
   try {
-    const r = await aiApi.createStudyPlan()
-    const d = r.data
-    if (d?.id) {
-      ElMessage.success(`AI 题单"${d.title}"创建成功，${d.problemCount} 道题`)
+    const r = await aiApi.chat({ mode: 'study-plan', message: '为我创建学习题单' })
+    let d = r.data
+    if (d?.reply) {
+      try {
+        let json = d.reply
+        const md = json.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+        if (md) json = md[1]
+        d = JSON.parse(json)
+      } catch {}
+    }
+    if (d?.title && d?.problemIDs?.length) {
+      await http.post('/study-plans', { title: d.title, description: d.description || '', difficulty: '', problemIDs: d.problemIDs })
+      ElMessage.success(`题单"${d.title}"已创建，共${d.problemIDs.length}道题`)
+      router.push('/study-plans')
     } else {
-      ElMessage.info('AI 未能创建题单')
+      ElMessage.info('AI 未能创建题单，请重试')
     }
   } catch { ElMessage.error('AI 创建题单失败') }
   finally { planLoading.value = false }

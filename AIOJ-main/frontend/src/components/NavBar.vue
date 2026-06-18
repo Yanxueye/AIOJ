@@ -34,7 +34,7 @@
             <el-icon><DataAnalysis /></el-icon><span>评测</span>
           </router-link>
           <router-link to="/ai" :class="{ active: route.name === 'ai-training' }">
-            <el-icon><MagicStick /></el-icon><span>AI 训练</span>
+            <el-icon><MagicStick /></el-icon><span>AI 对话</span>
           </router-link>
         </nav>
       </div>

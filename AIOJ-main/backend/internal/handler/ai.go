@@ -1,10 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"io"
 	"strings"
 	"time"
 
@@ -27,8 +28,10 @@ type AIHandler struct {
 
 type chatReq struct {
 	Message        string          `json:"message" binding:"required"`
+	Mode           string          `json:"mode,omitempty"`
 	History        []aisvc.Message `json:"history"`
 	ProblemID      *uint64         `json:"problem_id"`
+	ProblemIDs     []uint64        `json:"problem_ids,omitempty"`
 	ConversationID string          `json:"conversation_id"`
 	CodeLanguage   string          `json:"code_language,omitempty"`
 	Code           string          `json:"code,omitempty"`
@@ -60,6 +63,55 @@ type solveReq struct {
 
 func (h *AIHandler) Chat(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
+
+	// Fast path: raw body check for mode (before binding required fields)
+	raw, _ := c.GetRawData()
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	var modeCheck struct{ Mode string `json:"mode"` }
+	json.Unmarshal(raw, &modeCheck)
+	if mode := strings.TrimSpace(modeCheck.Mode); mode != "" {
+		var req chatReq
+		json.Unmarshal(raw, &req)
+		if req.ProblemID == nil {
+			var alt struct{ ProblemID *uint64 `json:"problemId"` }
+			if json.Unmarshal(raw, &alt) == nil { req.ProblemID = alt.ProblemID }
+		}
+		if req.CodeLanguage == "" {
+			var alt struct{ Language string `json:"language"` }
+			if json.Unmarshal(raw, &alt) == nil { req.CodeLanguage = alt.Language }
+		}
+		msg := strings.TrimSpace(req.Message)
+		pc, _ := h.problemContext(req.ProblemID)
+		// Fetch attached extra problems
+		var extraProblems []aisvc.ProblemContext
+		for _, pid := range req.ProblemIDs {
+			if req.ProblemID != nil && *req.ProblemID == pid { continue }
+			ctx, err := h.problemContext(&pid)
+			if err == nil && ctx != nil { extraProblems = append(extraProblems, *ctx) }
+		}
+		conv, _ := h.ensureConversation(uid, strings.TrimSpace(req.ConversationID), req.ProblemID, msg)
+		if conv != nil {
+			h.DB.Create(&models.Message{ConversationID: conv.ID, Role: "user", Content: msg})
+		}
+		resp, err := h.aiClient().ChatUnified(c.Request.Context(), aisvc.UnifiedChatRequest{
+			Mode:          mode,
+			UserID:        uid,
+			Messages:      append(sanitizeHistory(req.History), aisvc.Message{Role: "user", Content: msg}),
+			Problem:       pc,
+			ExtraProblems: extraProblems,
+			Code:          strings.TrimSpace(req.Code),
+			Language:      strings.TrimSpace(req.CodeLanguage),
+		})
+		if err != nil {
+			utils.Server(c, err.Error())
+			return
+		}
+		cid := ""
+		if conv != nil { cid = conv.ID; h.DB.Create(&models.Message{ConversationID: conv.ID, Role: "assistant", Content: resp.Reply}) }
+		utils.OK(c, gin.H{"reply": resp.Reply, "rawMarkdown": resp.RawMarkdown, "provider": resp.Provider, "mode": mode, "roundsUsed": resp.RoundsUsed, "conversationId": cid})
+		return
+	}
+
 	var req chatReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "请求参数不合法")
@@ -75,6 +127,18 @@ func (h *AIHandler) Chat(c *gin.Context) {
 	if err != nil {
 		utils.BadRequest(c, "题目不存在")
 		return
+	}
+
+	// Fetch extra attached problems (basic info only: id, title, tags)
+	var extraProblems []aisvc.ProblemContext
+	for _, pid := range req.ProblemIDs {
+		if req.ProblemID != nil && *req.ProblemID == pid {
+			continue
+		}
+		ctx, err := h.problemContext(&pid)
+		if err == nil && ctx != nil {
+			extraProblems = append(extraProblems, *ctx)
+		}
 	}
 
 	conv, err := h.ensureConversation(uid, strings.TrimSpace(req.ConversationID), req.ProblemID, req.Message)
@@ -93,6 +157,7 @@ func (h *AIHandler) Chat(c *gin.Context) {
 		Message:        req.Message,
 		History:        sanitizeHistory(req.History),
 		Problem:        problemCtx,
+		ExtraProblems:  extraProblems,
 		CodeLanguage:   strings.TrimSpace(req.CodeLanguage),
 		Code:           strings.TrimSpace(req.Code),
 	})
@@ -363,30 +428,7 @@ func (h *AIHandler) KnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	// Persist knowledge graph to database
-	nodesJSON, _ := json.Marshal(resp.Nodes)
-	edgesJSON, _ := json.Marshal(resp.Edges)
-	graph := models.UserKnowledgeGraph{
-		UserID:  uid,
-		Scope:   scope,
-		Nodes:   string(nodesJSON),
-		Edges:   string(edgesJSON),
-		Summary: strings.Join(resp.Suggestions, "；"),
-	}
-	// Upsert: update if exists for same scope, create if not
-	var existing models.UserKnowledgeGraph
-	if err := h.DB.Where("user_id = ? AND scope = ?", uid, scope).First(&existing).Error; err == nil {
-		existing.Nodes = string(nodesJSON)
-		existing.Edges = string(edgesJSON)
-		existing.Summary = strings.Join(resp.Suggestions, "；")
-		if saveErr := h.DB.Save(&existing).Error; saveErr != nil {
-			log.Printf("[ai] knowledge graph save failed: %v", saveErr)
-		}
-	} else {
-		if createErr := h.DB.Create(&graph).Error; createErr != nil {
-			log.Printf("[ai] knowledge graph create failed: %v", createErr)
-		}
-	}
+		utils.OK(c, resp)
 
 	utils.OK(c, resp)
 }

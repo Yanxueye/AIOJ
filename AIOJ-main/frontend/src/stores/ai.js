@@ -21,22 +21,27 @@ export const useAIStore = defineStore('ai', () => {
     })
   }
 
-  async function sendMessage(content, problemContext = null, codeContext = null) {
+  // Unified sendMessage — the only send method needed.
+  // context: { problem, attachedProblems: [id, ...], code: { language, code } }
+  async function sendMessage(content, context = null, mode = 'chat') {
+    const ctx = context || {}
     addMessage('user', content)
     loading.value = true
     chatLoading.value = true
     error.value = null
     try {
       const res = await aiApi.chat({
+        mode,
         message: content,
         history: currentMessages.value.slice(0, -1).map(m => ({
           role: m.role,
           content: m.content
         })),
-        problem_id: problemContext?.id || null,
+        problem_id: ctx.problem?.id || null,
+        problem_ids: ctx.attachedProblems || [],
         conversation_id: currentConversationId.value || '',
-        code_language: codeContext?.language || null,
-        code: codeContext?.code || null
+        code_language: ctx.code?.language || null,
+        code: ctx.code?.code || null
       })
       currentConversationId.value = res.data.conversationId || currentConversationId.value
       addMessage('assistant', res.data.reply)
@@ -68,59 +73,19 @@ export const useAIStore = defineStore('ai', () => {
     return currentMessages.value
   }
 
+  // Specialized methods — all delegate to sendMessage with appropriate mode and context object
   async function diagnoseCode({ problemId, language, code, submissionId = 0, judgeStatus = '', errorMessage = '' }) {
-    addMessage('user', '请诊断当前代码并指出潜在错误。')
-    loading.value = true
-    diagnoseLoading.value = true
-    error.value = null
-    try {
-      const res = await aiApi.diagnoseCode({ problemId, language, code, submissionId, judgeStatus, errorMessage })
-      addMessage('assistant', res.data.rawMarkdown || formatDiagnosis(res.data))
-      return res.data
-    } catch (err) {
-      error.value = '代码诊断服务暂时不可用，请稍后重试。'
-      addMessage('assistant', '代码诊断服务暂时不可用，请稍后重试。')
-      throw err
-    } finally {
-      loading.value = false
-      diagnoseLoading.value = false
-    }
+    return sendMessage('请诊断当前代码并指出潜在错误。', { problem: { id: problemId }, code: { language, code } }, 'code-diagnosis')
   }
 
   async function solveProblem({ problemId, question = '', level = 'hint', language = '', code = '' }) {
-    addMessage('user', level === 'hint' ? '请给我这道题的解题提示。' : '请讲解这道题的解法。')
-    loading.value = true
-    solveLoading.value = true
-    error.value = null
-    try {
-      const res = await aiApi.solveProblem({ problemId, question, level, language, code })
-      addMessage('assistant', formatSolve(res.data))
-      return res.data
-    } catch (err) {
-      error.value = '解题服务暂时不可用，请稍后重试。'
-      addMessage('assistant', '解题服务暂时不可用，请稍后重试。')
-      throw err
-    } finally {
-      loading.value = false
-      solveLoading.value = false
-    }
+    const msg = level === 'hint' ? '请给我这道题的解题提示。' : '请讲解这道题的解法。'
+    return sendMessage(msg, { problem: { id: problemId }, code: { language, code } }, 'solve')
   }
 
   async function buildKnowledgeGraph({ problemId = null, scope = 'recent' } = {}) {
-    addMessage('user', problemId ? '请基于当前题目整理我的知识图谱。' : '请基于最近做题记录整理我的知识图谱。')
-    loading.value = true
-    error.value = null
-    try {
-      const res = await aiApi.buildKnowledgeGraph({ problemId, scope })
-      addMessage('assistant', res.data.rawMarkdown || formatKnowledgeGraph(res.data))
-      return res.data
-    } catch (err) {
-      error.value = '知识图谱服务暂时不可用，请稍后重试。'
-      addMessage('assistant', '知识图谱服务暂时不可用，请稍后重试。')
-      throw err
-    } finally {
-      loading.value = false
-    }
+    const msg = problemId ? '请基于当前题目整理我的知识图谱。' : '请基于最近做题记录整理我的知识图谱。'
+    return sendMessage(msg, { problem: problemId ? { id: problemId } : null }, 'knowledge-graph')
   }
 
   function clearMessages() {
@@ -142,26 +107,6 @@ export const useAIStore = defineStore('ai', () => {
     if (currentConversationId.value === id) {
       clearMessages()
     }
-  }
-
-  function formatDiagnosis(data = {}) {
-    const complexity = []
-    if (data.timeComplexity) complexity.push(`时间：${data.timeComplexity}`)
-    if (data.spaceComplexity) complexity.push(`空间：${data.spaceComplexity}`)
-    const tags = (data.algorithmTags || []).map(t => `\`${t}\``).join(' ')
-    const suggestions = (data.suggestions || []).map(s => `- ${s}`).join('\n')
-    return `### 代码分析\n\n${complexity.length ? `**复杂度**：${complexity.join(' · ')}\n\n` : ''}${tags ? `**算法标签**：${tags}\n\n` : ''}${suggestions ? `**建议**\n\n${suggestions}` : ''}`
-  }
-
-  function formatSolve(data = {}) {
-    const complexity = []
-    if (data.timeComplexity) complexity.push(`时间：${data.timeComplexity}`)
-    if (data.spaceComplexity) complexity.push(`空间：${data.spaceComplexity}`)
-    return `${data.answer || ''}${complexity.length ? `\n\n**复杂度**：${complexity.join(' · ')}` : ''}`
-  }
-
-  function formatKnowledgeGraph(data = {}) {
-    return `### 学习知识图谱\n\n${data.summary || ''}\n\n- 节点数：${data.nodes?.length || 0}\n- 关系数：${data.edges?.length || 0}`
   }
 
   return {

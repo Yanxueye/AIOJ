@@ -13,23 +13,21 @@ type SearchResult struct {
 	Similarity float64  `json:"similarity"`
 }
 
-// BuildContext builds a context string from search results
+// BuildContext builds a context string from search results, truncating at maxLen if > 0.
 func BuildContext(results []SearchResult, maxLen int) string {
-	totalLen := 0
 	var context string
 	for i, result := range results {
-		if totalLen >= maxLen {
-			break
-		}
 		content := result.Document.Content
-		if totalLen+len(content) > maxLen {
-			content = content[:maxLen-totalLen]
+		if maxLen > 0 && len(context)+len(content) > maxLen {
+			if maxLen > len(context) {
+				context += content[:maxLen-len(context)]
+			}
+			break
 		}
 		if i > 0 {
 			context += "\n---\n"
 		}
 		context += content
-		totalLen += len(content)
 	}
 	return context
 }
