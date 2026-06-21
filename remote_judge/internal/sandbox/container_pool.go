@@ -183,7 +183,7 @@ func (p *ContainerPool) cleanWorkspace(ctx context.Context, containerID string) 
 
 	// 删除 workspace 和 tmp 中的所有文件。
 	execCmd(ctx, "docker", "exec", containerID, "sh", "-lc",
-		"rm -rf /workspace/* /tmp/* 2>/dev/null; true")
+		"rm -rf /workspace/* /workspace/.[!.]* /tmp/* /tmp/.[!.]* 2>/dev/null; true")
 
 	// 重置 cgroup 内存峰值，避免前次编译的高水位
 	// 污染后续运行步骤的内存测量。必须以 root (-u 0) 身份运行，

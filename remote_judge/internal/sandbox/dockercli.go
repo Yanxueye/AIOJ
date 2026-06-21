@@ -466,21 +466,42 @@ func readCgroupMemoryPeak(ctx context.Context, containerID string) (int, error) 
 	return int(bytes / 1024), nil
 }
 
-// wrapWithMemPeak 在 shell 命令后追加 cgroup memory.peak 捕获逻辑。
-// 结果写入容器文件系统中的 memPeakPath。
-// 保留原始命令的退出码，确保编译/运行错误仍能正确检测。
+// wrapWithTimeMem wraps a command with /usr/bin/time -v to capture the
+// per-process peak RSS (Maximum resident set size).  Unlike cgroup v2
+// memory.peak (which is a read-only monotonic counter unsuitable for
+// long-lived pooled containers), the per-process RSS is independent of
+// container history and gives an accurate number every run.
+//
+// The wrapper writes a raw time log to memPeakPath+".raw" and then uses
+// awk to extract "Maximum resident set size (kbytes)" × 1024 → bytes,
+// writing the result to memPeakPath.  The original exit code is preserved.
+func wrapWithTimeMem(command []string, memPeakPath string) []string {
+	rawFile := memPeakPath + ".raw"
+	// time -v -o RAW CMD ; awk RSS*1024 > OUT ; exit with CMD's code
+	suffix := "; _rc=$?; awk '/Maximum resident/{print $NF*1024}' " +
+		shellQuote(rawFile) + " > " + shellQuote(memPeakPath) +
+		" 2>/dev/null; exit $_rc"
 
-// 同时支持直接 argv 命令和 sh -lc 包装命令。
-func wrapWithMemPeak(command []string, memPeakPath string) []string {
-	capCmd := "; _rc=$?; echo -n $(cat /sys/fs/cgroup/memory.peak 2>/dev/null || cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes 2>/dev/null || echo 0) > " + shellQuote(memPeakPath) + "; exit $_rc"
 	if len(command) == 3 && command[0] == "sh" && command[1] == "-lc" {
-		return []string{"sh", "-lc", command[2] + capCmd}
+		// Already a sh -lc command.  Nest another sh -lc inside time
+		// so that env-var assignments (e.g. GOCACHE=/tmp) are parsed
+		// by the inner shell, not by time itself.
+		cmd := "time -v -o " + shellQuote(rawFile) + " sh -lc " + shellQuote(command[2]) + suffix
+		return []string{"sh", "-lc", cmd}
 	}
+	// Argv command: wrap in sh -lc.
 	parts := make([]string, len(command))
 	for i, arg := range command {
 		parts[i] = shellQuote(arg)
 	}
-	return []string{"sh", "-lc", strings.Join(parts, " ") + capCmd}
+	cmd := "time -v -o " + shellQuote(rawFile) + " " + strings.Join(parts, " ") + suffix
+	return []string{"sh", "-lc", cmd}
+}
+
+// wrapWithMemPeak is a legacy wrapper that reads cgroup memory.peak.
+// Prefer wrapWithTimeMem for per-process RSS accuracy in pooled containers.
+func wrapWithMemPeak(command []string, memPeakPath string) []string {
+	return wrapWithTimeMem(command, memPeakPath)
 }
 
 // removeContainer 移除临时容器。
