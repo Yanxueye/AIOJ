@@ -1,4 +1,3 @@
-
 # Fused
 
 > **融合仓库** — 将 `AIOJ-main`、`remote_judge`、`agent-service` 整合于同一代码库协同开发。
@@ -327,8 +326,8 @@ fused/
 ### 2. 克隆仓库
 
 ```bash
-git clone https://github.com/dinosjq/fused_oj.git
-cd fused
+git clone https://github.com/Yanxueye/AIOJ.git
+cd fused_oj
 ```
 
 ### 3. 配置 agent-service `.env`
