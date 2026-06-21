@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/terminaloj/backend/internal/data"
 	"github.com/terminaloj/backend/internal/middleware"
 	"github.com/terminaloj/backend/internal/models"
 	"github.com/terminaloj/backend/internal/utils"
@@ -104,15 +105,16 @@ type problemListItem struct {
 	Attempted       bool               `json:"attempted"`
 }
 
-// validateTags rejects tags that are not in the algorithm_tags dictionary.
+// validateTags rejects tags that are not in the system tag dictionary.
 func (h *ProblemHandler) validateTags(tags []string) error {
 	if len(tags) == 0 {
 		return nil
 	}
-	var validNames []string
-		// AlgorithmTag removed — tags stored in Problem.Tags JSON
+	validNames := data.TagNames()
 	validSet := make(map[string]bool, len(validNames))
-	for _, n := range validNames { validSet[n] = true }
+	for _, n := range validNames {
+		validSet[n] = true
+	}
 	for _, t := range tags {
 		if !validSet[t] {
 			return fmt.Errorf("算法标签 %q 不在系统标签字典中", t)
@@ -838,6 +840,10 @@ func (h *ProblemHandler) Update(c *gin.Context) {
 		p.Status = payload.Status
 	}
 
+	// IMPORTANT: nil out CurrentVersion before Save to prevent GORM's
+	// BelongsTo callback from overwriting CurrentVersionID with the
+	// preloaded old version's ID (the association pointer is stale).
+	p.CurrentVersion = nil
 	if err := h.DB.Save(p).Error; err != nil {
 		utils.Server(c, err.Error())
 		return
@@ -882,6 +888,10 @@ func (h *ProblemHandler) Publish(c *gin.Context) {
 	p.PublishedAt = &now
 	p.PublishedBy = uint64Ptr(editorID)
 	p.ReviewComment = req.ReviewComment
+	// Nil out association pointers to prevent GORM's BelongsTo callback
+	// from overwriting the foreign keys with stale preloaded values.
+	p.CurrentVersion = nil
+	p.PublishedVersion = nil
 	if err := h.DB.Save(p).Error; err != nil {
 		utils.Server(c, err.Error())
 		return
@@ -935,6 +945,9 @@ func (h *ProblemHandler) Rollback(c *gin.Context) {
 	p.Tags = version.Tags
 	p.Source = version.Source
 	p.LastEditedBy = uint64Ptr(editorID)
+	// Nil out CurrentVersion so GORM's BelongsTo callback doesn't
+	// overwrite CurrentVersionID with the stale preloaded version.
+	p.CurrentVersion = nil
 	if err := h.DB.Save(p).Error; err != nil {
 		utils.Server(c, err.Error())
 		return
