@@ -724,6 +724,11 @@ func (h *ProblemHandler) Create(c *gin.Context) {
 	editorID, _ := middleware.CurrentUserID(c)
 	now := time.Now().UTC()
 	status := defaultProblemStatus(req.Status)
+	// New problems default to "published" so they appear in the list immediately.
+	// Admins can explicitly set "draft" in the form to create privately.
+	if status == models.ProblemStatusDraft {
+		status = models.ProblemStatusPublished
+	}
 
 	// Create problem first (let database assign auto-increment ID)
 	problem := models.Problem{

@@ -201,7 +201,7 @@ function createDefaultForm() {
     difficulty: '简单',
     difficultyScore: 800,
     source: 'Admin',
-    status: 'draft',
+    status: 'published',
     reviewComment: '',
     timeLimit: 1000,
     memoryLimit: 256,

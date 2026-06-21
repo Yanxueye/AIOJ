@@ -3,7 +3,6 @@ package judger
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -79,24 +78,7 @@ func clearWorkspace(path string) error {
 		return err
 	}
 	for _, entry := range entries {
-		full := filepath.Join(path, entry.Name())
-		if entry.IsDir() {
-			_ = os.RemoveAll(full)
-			continue
-		}
-		if isWorkspaceFile(entry.Name()) {
-			_ = os.Remove(full)
-		}
+		_ = os.RemoveAll(filepath.Join(path, entry.Name()))
 	}
 	return nil
-}
-
-func isWorkspaceFile(name string) bool {
-	allowed := []string{".cpp", ".go", ".py", ".out", ".txt", ".exe", ".obj", ".o"}
-	for _, ext := range allowed {
-		if strings.HasSuffix(name, ext) {
-			return true
-		}
-	}
-	return false
 }

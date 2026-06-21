@@ -71,9 +71,12 @@ func (p *PooledSandbox) execPooled(ctx context.Context, req ExecRequest) (ExecRe
 		return ExecResult{}, err
 	}
 
-	// 包装命令以从容器内部捕获 cgroup 内存峰值。
-	// 包装器在退出前将峰值写入 /workspace 中的文件，
-	// 并保留原始退出码。
+	// cgroup v2 memory.peak is a read-only monotonic counter — it tracks
+	// the all-time maximum since the cgroup was created and CANNOT be reset
+	// by writing to it.  For pooled (long-lived) containers this means the
+	// wrapWithTimeMem uses /usr/bin/time -v to capture the per-process
+	// RSS peak, which is independent of the pooled container's cgroup
+	// history and is always accurate.
 	memFile := "/workspace/.judge_mem_" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	wrappedCmd := wrapWithMemPeak(req.Command, memFile)
 
@@ -81,13 +84,14 @@ func (p *PooledSandbox) execPooled(ctx context.Context, req ExecRequest) (ExecRe
 	result, execErr := p.execInContainer(timeoutCtx, item.ContainerID, wrappedCmd, req.Stdin)
 	result.Runtime = time.Since(start)
 
-	// 读取容器内包装器写入的内存峰值文件。
+	// Read the per-process RSS peak (already in bytes) written by the
+	// awk extraction inside wrapWithTimeMem.
 	if data, err := execCmdOutput(timeoutCtx, "docker", "exec", item.ContainerID, "cat", memFile); err == nil {
-		if peakBytes, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
-			result.MemoryKB = int(peakBytes / 1024)
+		if rssBytes, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
+			result.MemoryKB = int(rssBytes / 1024)
 		}
 	}
-	_ = execCmd(timeoutCtx, "docker", "exec", item.ContainerID, "rm", "-f", memFile)
+	_ = execCmd(timeoutCtx, "docker", "exec", item.ContainerID, "rm", "-f", memFile, memFile+".raw")
 
 	// 将输出文件收集回工作区。
 	if result.ExitCode == 0 && req.WorkDir != "" {
@@ -109,12 +113,14 @@ func (p *PooledSandbox) execPooled(ctx context.Context, req ExecRequest) (ExecRe
 }
 
 func (p *PooledSandbox) prepareWorkspace(ctx context.Context, containerID string, req ExecRequest) error {
-	// 创建工作区目录。
+	// Clear container /workspace first.  cleanWorkspace on Release also does
+	// this; the clear-on-acquire is a belt-and-suspenders guard in case the
+	// release-time cleanup was skipped or incomplete.
+	_ = execCmd(ctx, "docker", "exec", containerID, "sh", "-lc",
+		"rm -rf /workspace/* /workspace/.[!.]* 2>/dev/null; true")
 	if err := execCmd(ctx, "docker", "exec", containerID, "sh", "-lc", "mkdir -p /workspace"); err != nil {
 		return err
 	}
-	// 无需传输文件——源码写入宿主机工作目录并通过 bind-mount 挂载，
-	// 池化模式（类 copy 模式）则通过 exec 复制。
 	return p.transferFiles(ctx, containerID, req.WorkDir)
 }
 
@@ -122,33 +128,23 @@ func (p *PooledSandbox) transferFiles(ctx context.Context, containerID, workDir 
 	if workDir == "" {
 		return nil
 	}
-	// 通过 docker exec 列出文件。
-	listCmd := exec.CommandContext(ctx, "docker", "exec", containerID,
-		"sh", "-lc", "ls -1 /workspace/ 2>/dev/null || true")
-	listOut, _ := listCmd.Output()
-	existing := make(map[string]bool)
-	for _, name := range strings.Fields(strings.TrimSpace(string(listOut))) {
-		existing[name] = true
-	}
-
-	// 将每个新文件从宿主机复制到容器 workspace。
+	// Copy every file from the host workDir into the container, always
+	// overwriting.  Stale files left by a prior run (e.g. a compiled binary
+	// that cleanWorkspace missed) must never survive into this execution.
 	entries, err := os.ReadDir(workDir)
 	if err != nil {
-		return nil
+		return err
 	}
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if existing[name] {
-			continue
-		}
 		fileContent, err := os.ReadFile(filepath.Join(workDir, name))
 		if err != nil {
 			continue
 		}
-		// 由于 CAP_FOWNER 已被移除，使用 install 设置可执行权限。
+		// Use install(1) so CAP_FOWNER-lacking containers still get 0755.
 		cmd := exec.CommandContext(ctx, "docker", "exec", "-i", containerID, "sh", "-lc",
 			"install -m 755 /dev/null "+shellQuote("/workspace/"+name)+" && cat > "+shellQuote("/workspace/"+name))
 		cmd.Stdin = bytes.NewReader(fileContent)
