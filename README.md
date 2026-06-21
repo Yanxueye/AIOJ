@@ -1,3 +1,4 @@
+
 # Fused
 
 > **融合仓库** — 将 `AIOJ-main`、`remote_judge`、`agent-service` 整合于同一代码库协同开发。
@@ -29,11 +30,11 @@
 
 当前仓库包含三个核心子项目：
 
-| 项目 | 职责 | 技术栈 |
-|------|------|--------|
-| **AIOJ-main** | AI 辅助在线判题平台 | Vue 3 + Go 1.21 (Gin/GORM) |
-| **remote_judge** | 独立判题子系统 | Go 1.25+ (Docker Sandbox) |
-| **agent-service** | AI 微服务 (Tool Calling Agent) | Go 1.21 (DeepSeek/Ollama) |
+| 项目                    | 职责                           | 技术栈                     |
+| ----------------------- | ------------------------------ | -------------------------- |
+| **AIOJ-main**     | AI 辅助在线判题平台            | Vue 3 + Go 1.21 (Gin/GORM) |
+| **remote_judge**  | 独立判题子系统                 | Go 1.25+ (Docker Sandbox)  |
+| **agent-service** | AI 微服务 (Tool Calling Agent) | Go 1.21 (DeepSeek/Ollama)  |
 
 核心特性:
 
@@ -195,22 +196,22 @@ sequenceDiagram
 
 ### 三种工具
 
-| 工具 | 功能 | Agent → |
-|------|------|---------|
+| 工具                    | 功能                                     | Agent →                           |
+| ----------------------- | ---------------------------------------- | ---------------------------------- |
 | `query_user_problems` | 查询用户做题记录（按标签/状态/难度过滤） | HTTP → OJ `/api/agent/problems` |
-| `submit_code` | 提交代码评测，返回判题结果 | HTTP → OJ `/api/agent/judge` |
-| `retrieve_knowledge` | 从 OI-Wiki 检索算法知识（600 文档块） | 本地 RAG 引擎 |
+| `submit_code`         | 提交代码评测，返回判题结果               | HTTP → OJ `/api/agent/judge`    |
+| `retrieve_knowledge`  | 从 OI-Wiki 检索算法知识（600 文档块）    | 本地 RAG 引擎                      |
 
 ### Mode 映射
 
-| mode | 可用工具 | 最大轮数 | 典型用途 |
-|------|---------|---------|---------|
-| `chat` | query_user_problems, retrieve_knowledge | 3 | 自由对话，可主动查题/查知识 |
-| `code-diagnosis` | 无 | 0 | 纯代码分析，调一次 LLM |
-| `generate-solution` | 无 | 0 | 基于代码生成题解 |
-| `knowledge-graph` | query_user_problems | 1 | AI 分析用户薄弱点 |
-| `study-plan` | query_user_problems | 2 | AI 创建个性化题单 |
-| `solve` | 全部 3 个工具 | 3 | 解题辅助（hint/explain/full） |
+| mode                  | 可用工具                                | 最大轮数 | 典型用途                      |
+| --------------------- | --------------------------------------- | -------- | ----------------------------- |
+| `chat`              | query_user_problems, retrieve_knowledge | 3        | 自由对话，可主动查题/查知识   |
+| `code-diagnosis`    | 无                                      | 0        | 纯代码分析，调一次 LLM        |
+| `generate-solution` | 无                                      | 0        | 基于代码生成题解              |
+| `knowledge-graph`   | query_user_problems                     | 1        | AI 分析用户薄弱点             |
+| `study-plan`        | query_user_problems                     | 2        | AI 创建个性化题单             |
+| `solve`             | 全部 3 个工具                           | 3        | 解题辅助（hint/explain/full） |
 
 ### 请求格式
 
@@ -279,32 +280,32 @@ fused/
 
 ### AIOJ-main
 
-| 层级 | 技术 |
-|------|------|
-| 前端 | Vue 3, Vite, Pinia, Vue Router, Element Plus, Monaco Editor, ECharts |
-| 后端 | Go 1.21, Gin, GORM, MySQL, RabbitMQ, gRPC, JWT |
-| 知识图谱 | 硬编码在 `internal/data/knowledge.go` (200+ 节点, 11 分类) |
+| 层级     | 技术                                                                 |
+| -------- | -------------------------------------------------------------------- |
+| 前端     | Vue 3, Vite, Pinia, Vue Router, Element Plus, Monaco Editor, ECharts |
+| 后端     | Go 1.21, Gin, GORM, MySQL, RabbitMQ, gRPC, JWT                       |
+| 知识图谱 | 硬编码在 `internal/data/knowledge.go` (200+ 节点, 11 分类)         |
 
 ### remote_judge
 
-| 类别 | 工具 |
-|------|------|
-| 语言 | Go 1.25+ |
+| 类别 | 工具               |
+| ---- | ------------------ |
+| 语言 | Go 1.25+           |
 | 沙箱 | Docker CLI Sandbox |
-| 通信 | gRPC + JSON Codec |
-| 队列 | Memory / RabbitMQ |
-| 仓储 | Memory / MySQL |
+| 通信 | gRPC + JSON Codec  |
+| 队列 | Memory / RabbitMQ  |
+| 仓储 | Memory / MySQL     |
 
 ### agent-service
 
-| 类别 | 工具 |
-|------|------|
-| 语言 | Go 1.21, Gin |
-| 主模型 | DeepSeek V4 (OpenAI 兼容 API, 支持 Tool Calling) |
-| 降级模型 | Ollama (qwen2.5-coder:7b, 纯文本, 不支持 Tool Calling) |
-| Embedding | Ollama nomic-embed-text:latest |
-| RAG | langchaingo 文档分割 + 向量检索 |
-| Agent | 自定义 Agent Loop (max 3 轮工具调用) |
+| 类别      | 工具                                                   |
+| --------- | ------------------------------------------------------ |
+| 语言      | Go 1.21, Gin                                           |
+| 主模型    | DeepSeek V4 (OpenAI 兼容 API, 支持 Tool Calling)       |
+| 降级模型  | Ollama (qwen2.5-coder:7b, 纯文本, 不支持 Tool Calling) |
+| Embedding | Ollama nomic-embed-text:latest                         |
+| RAG       | langchaingo 文档分割 + 向量检索                        |
+| Agent     | 自定义 Agent Loop (max 3 轮工具调用)                   |
 
 ---
 
@@ -314,14 +315,14 @@ fused/
 
 确保已安装并运行：
 
-| 依赖 | 安装方式 | 验证命令 |
-|------|---------|---------|
-| Go 1.21+ | [go.dev/dl](https://go.dev/dl/) | `go version` |
-| Node.js 18+ | [nodejs.org](https://nodejs.org/) | `node --version` |
-| MySQL 8.x | Docker 或本地安装 | `mysql --version` |
-| RabbitMQ 3.x | Docker 或本地安装 | 访问 `http://localhost:15672` |
-| Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop/) | `docker --version` |
-| Ollama | [ollama.com](https://ollama.com/) (可选) | `ollama list` |
+| 依赖           | 安装方式                                                   | 验证命令                        |
+| -------------- | ---------------------------------------------------------- | ------------------------------- |
+| Go 1.21+       | [go.dev/dl](https://go.dev/dl/)                               | `go version`                  |
+| Node.js 18+    | [nodejs.org](https://nodejs.org/)                             | `node --version`              |
+| MySQL 8.x      | Docker 或本地安装                                          | `mysql --version`             |
+| RabbitMQ 3.x   | Docker 或本地安装                                          | 访问 `http://localhost:15672` |
+| Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop/) | `docker --version`            |
+| Ollama         | [ollama.com](https://ollama.com/) (可选)                      | `ollama list`                 |
 
 ### 2. 克隆仓库
 
@@ -450,46 +451,46 @@ npm run dev
 
 ## 端口总览
 
-| 服务 | 默认端口 | 说明 |
-|------|---------|------|
-| AIOJ 前端 | :5173 | Vite 开发服务器 |
-| AIOJ 后端 | :8080 | Gin HTTP API |
-| remote_judge gRPC | :9090 | 判题服务 |
-| agent-service | :8090 | AI Agent 微服务 |
-| MySQL | :3306 | 数据库 |
-| RabbitMQ | :5672 | 消息队列 |
-| RabbitMQ 管理 | :15672 | Web UI (guest/guest) |
+| 服务              | 默认端口 | 说明                 |
+| ----------------- | -------- | -------------------- |
+| AIOJ 前端         | :5173    | Vite 开发服务器      |
+| AIOJ 后端         | :8080    | Gin HTTP API         |
+| remote_judge gRPC | :9090    | 判题服务             |
+| agent-service     | :8090    | AI Agent 微服务      |
+| MySQL             | :3306    | 数据库               |
+| RabbitMQ          | :5672    | 消息队列             |
+| RabbitMQ 管理     | :15672   | Web UI (guest/guest) |
 
 ---
 
 ## 默认账号
 
-| 角色 | 用户名 | 密码 |
-|------|--------|------|
+| 角色     | 用户名         | 密码       |
+| -------- | -------------- | ---------- |
 | 普通用户 | `coder_test` | `123456` |
-| 管理员 | `admin` | `123456` |
+| 管理员   | `admin`      | `123456` |
 
 ---
 
 ## 常用命令
 
-| 操作 | 命令 |
-|------|------|
-| AIOJ 后端测试 | `cd AIOJ-main\backend && go test ./...` |
-| remote_judge 测试 | `cd remote_judge && go test ./...` |
-| AIOJ 前端构建 | `cd AIOJ-main\frontend && npm run build` |
-| agent-service 构建 | `cd agent-service && go build ./...` |
+| 操作                   | 命令                                                |
+| ---------------------- | --------------------------------------------------- |
+| AIOJ 后端测试          | `cd AIOJ-main\backend && go test ./...`           |
+| remote_judge 测试      | `cd remote_judge && go test ./...`                |
+| AIOJ 前端构建          | `cd AIOJ-main\frontend && npm run build`          |
+| agent-service 构建     | `cd agent-service && go build ./...`              |
 | agent-service RAG 状态 | `curl http://127.0.0.1:8090/api/agent/rag-status` |
 
 ---
 
 ## 相关文档
 
-| 文档 | 说明 |
-|------|------|
-| [AIOJ-main/README.md](AIOJ-main/README.md) | AIOJ 项目说明 |
-| [AIOJ-main/backend/API.md](AIOJ-main/backend/API.md) | 后端 API 契约 |
-| [remote_judge/README.md](remote_judge/README.md) | remote_judge 项目说明 |
-| [agent-service/README.md](agent-service/README.md) | agent-service 项目说明 |
-| [CLAUDE.md](CLAUDE.md) | 开发指南 (命令、架构、端口) |
-| [remote_judge/docs/check.md](remote_judge/docs/check.md) | remote_judge 测试引导 |
+| 文档                                                  | 说明                        |
+| ----------------------------------------------------- | --------------------------- |
+| [AIOJ-main/README.md](AIOJ-main/README.md)               | AIOJ 项目说明               |
+| [AIOJ-main/backend/API.md](AIOJ-main/backend/API.md)     | 后端 API 契约               |
+| [remote_judge/README.md](remote_judge/README.md)         | remote_judge 项目说明       |
+| [agent-service/README.md](agent-service/README.md)       | agent-service 项目说明      |
+| [CLAUDE.md](CLAUDE.md)                                   | 开发指南 (命令、架构、端口) |
+| [remote_judge/docs/check.md](remote_judge/docs/check.md) | remote_judge 测试引导       |
