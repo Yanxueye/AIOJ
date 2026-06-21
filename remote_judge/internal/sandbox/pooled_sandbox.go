@@ -50,24 +50,32 @@ func (p *PooledSandbox) Close(ctx context.Context) {
 }
 
 func (p *PooledSandbox) execPooled(ctx context.Context, req ExecRequest) (ExecResult, error) {
-	timeoutCtx, cancel := context.WithTimeout(ctx, req.TimeLimit+2*time.Second)
+	runLimit := req.TimeLimit
+	if runLimit <= 0 {
+		runLimit = time.Second
+	}
+	setupTimeout := runLimit + 10*time.Second
+	if setupTimeout < 15*time.Second {
+		setupTimeout = 15 * time.Second
+	}
+	setupCtx, cancel := context.WithTimeout(ctx, setupTimeout)
 	defer cancel()
 
-	if err := p.inner.ensureImage(timeoutCtx, req.Image); err != nil {
+	if err := p.inner.ensureImage(setupCtx, req.Image); err != nil {
 		return ExecResult{}, err
 	}
 
 	// 尝试获取池化容器。超时时回退到内部沙箱。
-	acquireCtx, acquireCancel := context.WithTimeout(timeoutCtx, 5*time.Second)
+	acquireCtx, acquireCancel := context.WithTimeout(setupCtx, 5*time.Second)
 	item, err := p.pool.Acquire(acquireCtx, req.Image)
 	acquireCancel()
 	if err != nil {
 		// 池已耗尽——回退到直接执行。
-		return p.inner.exec(timeoutCtx, req)
+		return p.inner.exec(ctx, req)
 	}
 
-	if err := p.prepareWorkspace(timeoutCtx, item.ContainerID, req); err != nil {
-		p.pool.Release(timeoutCtx, item)
+	if err := p.prepareWorkspace(setupCtx, item.ContainerID, req); err != nil {
+		p.pool.Release(context.Background(), item)
 		return ExecResult{}, err
 	}
 
@@ -80,28 +88,34 @@ func (p *PooledSandbox) execPooled(ctx context.Context, req ExecRequest) (ExecRe
 	memFile := "/workspace/.judge_mem_" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	wrappedCmd := wrapWithMemPeak(req.Command, memFile)
 
+	execCtx, execCancel := context.WithTimeout(ctx, runLimit+2*time.Second)
+	defer execCancel()
+
 	start := time.Now()
-	result, execErr := p.execInContainer(timeoutCtx, item.ContainerID, wrappedCmd, req.Stdin)
+	result, execErr := p.execInContainer(execCtx, item.ContainerID, wrappedCmd, req.Stdin)
 	result.Runtime = time.Since(start)
+
+	postCtx, postCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer postCancel()
 
 	// Read the per-process RSS peak (already in bytes) written by the
 	// awk extraction inside wrapWithTimeMem.
-	if data, err := execCmdOutput(timeoutCtx, "docker", "exec", item.ContainerID, "cat", memFile); err == nil {
+	if data, err := execCmdOutput(postCtx, "docker", "exec", item.ContainerID, "cat", memFile); err == nil {
 		if rssBytes, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
 			result.MemoryKB = int(rssBytes / 1024)
 		}
 	}
-	_ = execCmd(timeoutCtx, "docker", "exec", item.ContainerID, "rm", "-f", memFile, memFile+".raw")
+	_ = execCmd(postCtx, "docker", "exec", item.ContainerID, "rm", "-f", memFile, memFile+".raw")
 
 	// 将输出文件收集回工作区。
 	if result.ExitCode == 0 && req.WorkDir != "" {
-		_ = p.inner.collectOutput(timeoutCtx, item.ContainerID, req.WorkDir)
+		_ = p.inner.collectOutput(postCtx, item.ContainerID, req.WorkDir)
 	}
 
 	// 清洗后放回池中。
 	p.pool.Release(context.Background(), item)
 
-	if timeoutCtx.Err() == context.DeadlineExceeded {
+	if execCtx.Err() == context.DeadlineExceeded {
 		result.TimedOut = true
 		result.ExitCode = 124
 		return result, nil

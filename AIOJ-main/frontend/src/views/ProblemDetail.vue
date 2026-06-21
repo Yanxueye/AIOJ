@@ -458,7 +458,10 @@
             <div class="chat-msg-content">你好！我是 AI 助手，可以帮你解答关于这道题的问题、分析代码或给出提示。</div>
           </div>
           <div v-for="(msg, i) in aiStore.currentMessages" :key="i" :class="['chat-msg', msg.role]">
-            <div class="chat-msg-content">{{ msg.content }}</div>
+            <div class="chat-msg-content">
+              <MarkdownRenderer v-if="msg.role === 'assistant'" :content="msg.content" />
+              <div v-else class="chat-msg-text">{{ msg.content }}</div>
+            </div>
           </div>
           <div v-if="aiStore.chatLoading" class="chat-msg assistant">
             <div class="chat-msg-content"><el-icon class="is-loading"><Loading /></el-icon> 思考中...</div>
@@ -1266,7 +1269,18 @@ onBeforeUnmount(() => { stopResize(); disposeCharts() })
 .ai-chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .chat-msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.6; word-break: break-word; }
 .chat-msg.user { align-self: flex-end; background: var(--accent-primary); color: #fff; border-bottom-right-radius: 4px; }
-.chat-msg.assistant { align-self: flex-start; background: var(--bg-hover); color: var(--text-primary); border-bottom-left-radius: 4px; }
+.chat-msg.assistant { align-self: flex-start; max-width: 94%; background: var(--bg-hover); color: var(--text-primary); border-bottom-left-radius: 4px; }
+.chat-msg-content { min-width: 0; }
+.chat-msg-text { white-space: pre-wrap; }
+.chat-msg-content :deep(.markdown-body) { font-size: 13px; line-height: 1.65; }
+.chat-msg-content :deep(.markdown-body > :first-child) { margin-top: 0; }
+.chat-msg-content :deep(.markdown-body > :last-child) { margin-bottom: 0; }
+.chat-msg-content :deep(.markdown-body p) { margin: 6px 0; }
+.chat-msg-content :deep(.markdown-body ul),
+.chat-msg-content :deep(.markdown-body ol) { margin: 6px 0; padding-left: 18px; }
+.chat-msg-content :deep(.markdown-body pre) { max-width: 100%; margin: 8px 0; padding: 10px; overflow-x: auto; white-space: pre; }
+.chat-msg-content :deep(.markdown-body code) { white-space: pre-wrap; word-break: break-word; }
+.chat-msg-content :deep(.markdown-body pre code) { white-space: pre; word-break: normal; }
 .ai-chat-input { padding: 10px; border-top: 1px solid var(--border-light); }
 .chat-context-hint { margin-top: 4px; text-align: right; }
 

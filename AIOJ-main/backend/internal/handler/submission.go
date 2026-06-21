@@ -32,16 +32,15 @@ type submitReq struct {
 }
 
 type runReq struct {
-	Language   string         `json:"language" binding:"required"`
-	Code       string         `json:"code" binding:"required"`
-	TestCases  []testCaseItem `json:"testCases"`
+	Language  string         `json:"language" binding:"required"`
+	Code      string         `json:"code" binding:"required"`
+	TestCases []testCaseItem `json:"testCases"`
 }
 
 type testCaseItem struct {
 	Input    string `json:"input"`
 	Expected string `json:"expected"`
 }
-
 
 func (h *SubmissionHandler) Submit(c *gin.Context) {
 	uid, _ := middleware.CurrentUserID(c)
@@ -162,6 +161,7 @@ func (h *SubmissionHandler) Run(c *gin.Context) {
 		TimeLimitMS:   int32(problem.PublishedVersion.TimeLimit),
 		MemoryLimitMB: int32(problem.PublishedVersion.MemoryLimit),
 		OutputLimitKB: problem.PublishedVersion.OutputLimitKB,
+		RunMode:       "run",
 		TestCases:     testCases,
 	})
 	if err != nil {

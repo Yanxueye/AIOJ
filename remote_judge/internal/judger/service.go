@@ -2,10 +2,10 @@ package judger
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +50,7 @@ func (s *Service) Judge(ctx context.Context, req domain.JudgeRequest) (domain.Ju
 			ErrorMessage: "forbidden code pattern",
 		}, nil
 	}
+	normalizeJudgeLimits(&req)
 
 	workDir, err := s.prepareWorkspace(req, spec.SourceFile)
 	if err != nil {
@@ -146,10 +147,14 @@ func (s *Service) Judge(ctx context.Context, req domain.JudgeRequest) (domain.Ju
 			"caseNo":       tc.CaseNo,
 			"status":       caseStatus,
 			"runtimeMs":    int(runRes.Runtime.Milliseconds()),
+			"timeLimitMs":  req.TimeLimitMs,
 			"memoryKB":     runRes.MemoryKB,
 			"stdoutBytes":  runRes.StdoutBytes,
 			"stderrBytes":  runRes.StderrBytes,
+			"exitCode":     runRes.ExitCode,
+			"timedOut":     runRes.TimedOut,
 			"signal":       runRes.Signal,
+			"runMode":      req.RunMode,
 		})
 
 		if int(runRes.Runtime.Milliseconds()) > maxRuntime {
@@ -246,10 +251,25 @@ func (s *Service) compareCase(res sandbox.ExecResult, expected string, req domai
 	if res.ExitCode != 0 {
 		return domain.StatusRuntimeError
 	}
+	if req.RunMode == "run" {
+		return domain.StatusAccepted
+	}
 	if !compareOutput(res.Stdout, expected) {
 		return domain.StatusWrongAnswer
 	}
 	return domain.StatusAccepted
+}
+
+func normalizeJudgeLimits(req *domain.JudgeRequest) {
+	if req.TimeLimitMs <= 0 {
+		req.TimeLimitMs = 1000
+	}
+	if req.MemoryLimitMB <= 0 {
+		req.MemoryLimitMB = 128
+	}
+	if req.OutputLimitKB <= 0 {
+		req.OutputLimitKB = 1024
+	}
 }
 
 // normalizeOutput 统一输出比较规则。归一化 CRLF、去除末尾空白。
@@ -305,55 +325,30 @@ func lineMatch(actual, expected string) bool {
 	if actual == expected {
 		return true
 	}
-	aVal, aErr := strconvParseFloat(actual)
-	eVal, eErr := strconvParseFloat(expected)
-	if aErr != nil || eErr != nil {
+	actualFields := strings.Fields(actual)
+	expectedFields := strings.Fields(expected)
+	if len(actualFields) == 0 || len(actualFields) != len(expectedFields) {
 		return false
 	}
-	diff := aVal - eVal
+	for i := range actualFields {
+		aVal, aErr := strconv.ParseFloat(actualFields[i], 64)
+		eVal, eErr := strconv.ParseFloat(expectedFields[i], 64)
+		if aErr != nil || eErr != nil {
+			return false
+		}
+		if !floatEqual(aVal, eVal) {
+			return false
+		}
+	}
+	return true
+}
+
+func floatEqual(a, b float64) bool {
+	diff := a - b
 	if diff < 0 {
 		diff = -diff
 	}
 	return diff < 1e-6
-}
-
-func strconvParseFloat(s string) (float64, error) {
-	n := len(s)
-	i := 0
-	for i < n && (s[i] == ' ' || s[i] == '\t') {
-		i++
-	}
-	if i >= n {
-		return 0, errors.New("empty")
-	}
-	neg := false
-	if s[i] == '+' || s[i] == '-' {
-		neg = s[i] == '-'
-		i++
-	}
-	var intPart int64
-	for i < n && s[i] >= '0' && s[i] <= '9' {
-		intPart = intPart*10 + int64(s[i]-'0')
-		i++
-	}
-	fracPart := 0.0
-	if i < n && s[i] == '.' {
-		i++
-		pow := 0.1
-		for i < n && s[i] >= '0' && s[i] <= '9' {
-			fracPart += float64(s[i]-'0') * pow
-			pow *= 0.1
-			i++
-		}
-	}
-	if i == 0 || (intPart == 0 && fracPart == 0 && i == 0) {
-		return 0, errors.New("no digits")
-	}
-	result := float64(intPart) + fracPart
-	if neg {
-		result = -result
-	}
-	return result, nil
 }
 
 // trimPreview 截断长文本以便展示。

@@ -147,6 +147,39 @@ func TestJudgeRunModeSkipsOutputCompare(t *testing.T) {
 	}
 }
 
+func TestCompareOutputRejectsNumericPrefixOnly(t *testing.T) {
+	t.Logf(">>> Output compare: numeric prefixes must not hide trailing junk")
+	cases := []struct {
+		actual   string
+		expected string
+	}{
+		{actual: "1 99\n", expected: "1 2\n"},
+		{actual: "3abc\n", expected: "3\n"},
+		{actual: "4\nextra\n", expected: "4\n"},
+	}
+	for _, tc := range cases {
+		if compareOutput(tc.actual, tc.expected) {
+			t.Fatalf("compareOutput(%q, %q) = true, want false", tc.actual, tc.expected)
+		}
+	}
+}
+
+func TestCompareOutputFloatTokens(t *testing.T) {
+	t.Logf(">>> Output compare: token-wise float tolerance supports scientific notation")
+	cases := []struct {
+		actual   string
+		expected string
+	}{
+		{actual: "1.0000004 2e-6\n", expected: "1.0 0.000002\n"},
+		{actual: "-.5\n", expected: "-0.5000001\n"},
+	}
+	for _, tc := range cases {
+		if !compareOutput(tc.actual, tc.expected) {
+			t.Fatalf("compareOutput(%q, %q) = false, want true", tc.actual, tc.expected)
+		}
+	}
+}
+
 type memoryLimitSandbox struct{}
 
 func (memoryLimitSandbox) Compile(context.Context, sandbox.ExecRequest) (sandbox.ExecResult, error) {

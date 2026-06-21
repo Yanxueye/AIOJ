@@ -145,7 +145,7 @@ func seedProblems(conn *gorm.DB) error {
 			TestCases: []models.ProblemTestCase{
 				{CaseNo: 1, Input: "4 9\n2 7 11 15\n", Expected: "0 1", IsHidden: false},
 				{CaseNo: 2, Input: "3 6\n3 2 4\n", Expected: "1 2", IsHidden: false},
-				{CaseNo: 3, Input: "5 10\n1 5 3 7 9\n", Expected: "0 4", IsHidden: true},
+				{CaseNo: 3, Input: "5 14\n1 5 3 7 9\n", Expected: "1 4", IsHidden: true},
 			},
 			Templates: defaultTemplates(),
 		},
@@ -614,4 +614,3 @@ func seedSubmissions(conn *gorm.DB) error {
 	log.Printf("[seed] %d seed submissions created", len(subs))
 	return nil
 }
-
