@@ -89,7 +89,19 @@
           <div v-if="aiSuggestions.length" class="kp-suggestions">
             <el-divider />
             <div class="section-label"><el-icon><MagicStick /></el-icon> AI 学习建议</div>
-            <ul class="suggestion-list"><li v-for="(s, i) in aiSuggestions" :key="i">{{ s }}</li></ul>
+            <ul class="suggestion-list">
+              <li v-for="(s, i) in aiSuggestions" :key="i" class="suggestion-item">
+                <div class="suggestion-heading">
+                  <span v-if="s.area" class="suggestion-area">{{ s.area }}</span>
+                  <el-tag v-if="s.priority" size="small" effect="plain" :type="priorityTagType(s.priority)">{{ priorityLabel(s.priority) }}</el-tag>
+                </div>
+                <div class="suggestion-reason">{{ s.reason }}</div>
+                <div v-if="s.recommendedQuestions.length" class="suggestion-questions">
+                  <span class="suggestion-question-label">推荐题目</span>
+                  <router-link v-for="qid in s.recommendedQuestions" :key="qid" :to="`/problem/${qid}`" class="suggestion-question">#{{ qid }}</router-link>
+                </div>
+              </li>
+            </ul>
           </div>
         </div>
 
@@ -110,7 +122,19 @@
           </div>
           <el-divider />
           <div v-if="aiSuggestions.length" class="section-label">学习建议</div>
-          <ul v-if="aiSuggestions.length" class="suggestion-list"><li v-for="(s,i) in aiSuggestions" :key="i">{{ s }}</li></ul>
+          <ul v-if="aiSuggestions.length" class="suggestion-list">
+            <li v-for="(s,i) in aiSuggestions" :key="i" class="suggestion-item">
+              <div class="suggestion-heading">
+                <span v-if="s.area" class="suggestion-area">{{ s.area }}</span>
+                <el-tag v-if="s.priority" size="small" effect="plain" :type="priorityTagType(s.priority)">{{ priorityLabel(s.priority) }}</el-tag>
+              </div>
+              <div class="suggestion-reason">{{ s.reason }}</div>
+              <div v-if="s.recommendedQuestions.length" class="suggestion-questions">
+                <span class="suggestion-question-label">推荐题目</span>
+                <router-link v-for="qid in s.recommendedQuestions" :key="qid" :to="`/problem/${qid}`" class="suggestion-question">#{{ qid }}</router-link>
+              </div>
+            </li>
+          </ul>
         </div>
 
         <div v-else class="card overview-panel">
@@ -180,6 +204,97 @@ function displayName(name) { return name ? name.replace(/（分类）$/, '') : '
 function masteryColor(l) { if (l>=80) return '#67c23a'; if (l>=60) return '#409eff'; if (l>=40) return '#e6a23c'; if (l>0) return '#f56c6c'; return '#c0c4cc' }
 function masteryLevelName(l) { if (l>=80) return '掌握'; if (l>=60) return '精通'; if (l>=40) return '熟悉'; if (l>0) return '学习中'; return '未学习' }
 function diffTagType(d) { return d==='简单'?'success':d==='中等'?'warning':'danger' }
+
+function priorityTagType(priority) {
+  const p = String(priority || '').toLowerCase()
+  if (p === 'high') return 'danger'
+  if (p === 'medium') return 'warning'
+  if (p === 'low') return 'info'
+  return 'info'
+}
+
+function priorityLabel(priority) {
+  const p = String(priority || '').toLowerCase()
+  if (p === 'high') return '高优先级'
+  if (p === 'medium') return '中优先级'
+  if (p === 'low') return '低优先级'
+  return String(priority || '')
+}
+
+function stripMarkdownFence(text) {
+  const json = String(text || '').trim()
+  const md = json.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  return (md ? md[1] : json).trim()
+}
+
+function parseJSONLike(value) {
+  if (typeof value !== 'string') return value
+  const text = stripMarkdownFence(value)
+  try { return JSON.parse(text) } catch {}
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)) } catch {}
+  }
+  return value
+}
+
+function normalizeQuestionIds(value) {
+  const parsed = parseJSONLike(value)
+  const list = Array.isArray(parsed) ? parsed : parsed ? String(parsed).split(/[,\s，、]+/) : []
+  return list
+    .map(item => {
+      if (item && typeof item === 'object') return item.id ?? item.problemId ?? item.problemID
+      return item
+    })
+    .filter(item => item !== undefined && item !== null && String(item).trim() !== '')
+    .map(item => String(item).trim().replace(/^#/, ''))
+}
+
+function normalizeAISuggestion(item) {
+  const parsed = parseJSONLike(item)
+  if (typeof parsed === 'string') {
+    return { area: '', reason: parsed.trim(), priority: '', recommendedQuestions: [] }
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+
+  const area = parsed.area ?? parsed.topic ?? parsed.knowledge ?? parsed.knowledgePoint ?? parsed.label ?? parsed.name ?? ''
+  const reason = parsed.reason ?? parsed.suggestion ?? parsed.advice ?? parsed.description ?? parsed.summary ?? ''
+  const priority = parsed.priority ?? parsed.level ?? ''
+  const questions = parsed.recommended_questions ?? parsed.recommendedQuestions ?? parsed.problem_ids ?? parsed.problemIDs ?? parsed.problemIds ?? parsed.questions ?? parsed.recommendations
+  const fallback = reason || area || JSON.stringify(parsed)
+
+  return {
+    area: String(area || '').trim(),
+    reason: String(fallback || '').trim(),
+    priority: String(priority || '').trim(),
+    recommendedQuestions: normalizeQuestionIds(questions)
+  }
+}
+
+function normalizeAISuggestions(raw) {
+  const parsed = parseJSONLike(raw)
+  const list = Array.isArray(parsed) ? parsed : parsed ? [parsed] : []
+  return list.map(normalizeAISuggestion).filter(s => s?.reason)
+}
+
+function normalizeKnowledgeName(value) {
+  return displayName(String(value || '')).trim().toLowerCase()
+}
+
+function findKnowledgePointFromAI(node) {
+  const names = [node?.label, node?.name, node?.id, node?.area].filter(v => v !== undefined && v !== null)
+  return graphData.value.nodes.find(kp => {
+    const kpNames = [kp.id, kp.name, displayName(kp.name)].map(normalizeKnowledgeName)
+    return names.some(name => kpNames.includes(normalizeKnowledgeName(name)))
+  })
+}
+
+function isStrongMastery(mastery) {
+  if (typeof mastery === 'number') return mastery >= 40
+  const m = String(mastery || '').toLowerCase()
+  return ['mastered', 'proficient', 'familiar', '掌握', '精通', '熟悉'].includes(m)
+}
 
 const kpProblemCount = computed(() => selectedKP.value ? graphData.value.counts[selectedKP.value.id] || 0 : 0)
 const kpMastery = computed(() => selectedKP.value ? Math.round(graphData.value.mastery[selectedKP.value.id] || 0) : 0)
@@ -325,33 +440,29 @@ async function generateAIGraph() {
     let d = r.data
     // Try to parse structured data from reply JSON (strip markdown fences)
     if (d?.reply) {
-      try {
-        let json = d.reply
-        const md = json.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-        if (md) json = md[1]
-        const parsed = JSON.parse(json)
-        if (parsed.nodes || parsed.suggestions) {
-          d = parsed
-        }
-      } catch {}
+      const parsed = parseJSONLike(d.reply)
+      if (parsed?.nodes || parsed?.suggestions || parsed?.recommendations) d = parsed
     }
-    if (d?.nodes?.length || d?.suggestions?.length) {
+    const aiNodes = Array.isArray(d?.nodes) ? d.nodes : []
+    const suggestions = normalizeAISuggestions(d?.suggestions ?? d?.recommendations ?? d?.learningSuggestions)
+    if (aiNodes.length || suggestions.length) {
       const strengths = [], weaknesses = [], highlightMap = new Map()
-      d.nodes.forEach(n => {
+      aiNodes.forEach(n => {
         const name = n.label || n.id
-        const kp = graphData.value.nodes.find(k => k.name === name)
+        const kp = findKnowledgePointFromAI(n)
         if (!kp) return
-        if (n.mastery === 'mastered' || n.mastery === 'proficient' || n.mastery === 'familiar') {
-          strengths.push(name)
+        const display = displayName(kp.name || name)
+        if (isStrongMastery(n.mastery)) {
+          if (!strengths.includes(display)) strengths.push(display)
           highlightMap.set(kp.id, 'strength')
         } else {
-          weaknesses.push(name)
+          if (!weaknesses.includes(display)) weaknesses.push(display)
           highlightMap.set(kp.id, 'weakness')
         }
       })
       aiStrengths.value = strengths
       aiWeaknesses.value = weaknesses
-      aiSuggestions.value = d.suggestions || []
+      aiSuggestions.value = suggestions
       aiAnalysisActive.value = true
       selectedKP.value = null
       kpUntried.value = []; kpTried.value = []
@@ -478,8 +589,15 @@ onUnmounted(() => {
 .cat-name { flex: 1; color: var(--text-primary); font-weight: 500 }
 .cat-count { color: var(--text-muted); font-family: monospace; font-size: 11px }
 .overview-hint { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin: 0 }
-.suggestion-list { padding-left: 18px; margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.8 }
-.suggestion-list li { margin-bottom: 4px }
+.suggestion-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--text-secondary); line-height: 1.65 }
+.suggestion-item { padding: 10px 12px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-warm, var(--bg-card)) }
+.suggestion-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px }
+.suggestion-area { min-width: 0; font-weight: 700; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.suggestion-reason { color: var(--text-secondary); word-break: break-word }
+.suggestion-questions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px }
+.suggestion-question-label { font-size: 12px; color: var(--text-muted) }
+.suggestion-question { font-family: var(--font-mono); font-size: 12px; color: var(--accent-primary); text-decoration: none; padding: 1px 6px; border-radius: 999px; background: var(--accent-primary-bg, rgba(99, 102, 241, 0.08)) }
+.suggestion-question:hover { text-decoration: underline }
 @media (max-width: 960px) {
   .knowledge-layout { grid-template-columns: 1fr }
   .detail-panel { order: -1 }

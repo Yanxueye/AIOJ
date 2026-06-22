@@ -1,0 +1,148 @@
+{
+  "users": [
+    {
+      "user_id": "student_001",
+      "records": [
+        {
+          "question_id": "two_sum",
+          "status": "AC"
+        },
+        {
+          "question_id": "three_sum",
+          "status": "WA"
+        },
+        {
+          "question_id": "two_sum_ii",
+          "status": "AC"
+        },
+        {
+          "question_id": "climb_stairs",
+          "status": "WA"
+        },
+        {
+          "question_id": "fibonacci",
+          "status": "WA"
+        },
+        {
+          "question_id": "contains_duplicate",
+          "status": "AC"
+        },
+        {
+          "question_id": "binary_search",
+          "status": "AC"
+        },
+        {
+          "question_id": "search_insert",
+          "status": "AC"
+        },
+        {
+          "question_id": "house_robber",
+          "status": "WA"
+        },
+        {
+          "question_id": "coin_change",
+          "status": "WA"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        }
+      ]
+    },
+    {
+      "user_id": "student_002",
+      "records": [
+        {
+          "question_id": "two_sum",
+          "status": "AC"
+        },
+        {
+          "question_id": "two_sum_ii",
+          "status": "AC"
+        },
+        {
+          "question_id": "binary_search",
+          "status": "AC"
+        },
+        {
+          "question_id": "search_insert",
+          "status": "AC"
+        }
+      ]
+    },
+    {
+      "user_id": "student_003",
+      "records": [
+        {
+          "question_id": "two_sum",
+          "status": "WA"
+        },
+        {
+          "question_id": "three_sum",
+          "status": "WA"
+        },
+        {
+          "question_id": "climb_stairs",
+          "status": "WA"
+        },
+        {
+          "question_id": "fibonacci",
+          "status": "WA"
+        }
+      ]
+    },
+    {
+      "user_id": "student_004",
+      "records": [
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        },
+        {
+          "question_id": "阶乘问题",
+          "status": "Wrong Answer"
+        }
+      ]
+    }
+  ]
+}
